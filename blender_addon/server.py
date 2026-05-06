@@ -13,7 +13,7 @@ import threading
 import traceback
 from pathlib import Path
 
-from .handlers import HANDLERS
+from .tools.handlers import HANDLERS
 from .project_paths import resolve_project_root
 from .runtime import Runtime
 

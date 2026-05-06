@@ -138,7 +138,7 @@ def _install_fake_bpy(texts: Any | None = None, node_groups: Any | None = None):
     })
     bpy.data = types.SimpleNamespace(filepath="", texts=texts or _FakeTexts(), node_groups=default_groups)
     sys.modules["bpy"] = bpy
-    loaded_handlers = sys.modules.get("blender_addon.handlers")
+    loaded_handlers = sys.modules.get("blender_addon.tools.handlers")
     if loaded_handlers is not None:
         loaded_handlers.bpy = bpy
 
@@ -657,7 +657,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual(4096, select_max_tokens("removed_turn_class"))
 
     def test_partial_draft_write_is_blocked_before_overwriting_text_block(self):
-        from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
 
         result = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -684,7 +684,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("valid", read["result"]["current_revision_validity"])
 
     def test_write_script_draft_updates_single_canonical_text_block_only(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         result = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -699,7 +699,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertNotIn("revision_block_name", result["result"])
 
     def test_write_script_draft_archives_full_revision_to_disk(self):
-        from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
 
         with tempfile.TemporaryDirectory() as tmp:
             result = handle_write_script_draft({
@@ -723,7 +723,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             self.assertEqual(str(archive_path), read["result"]["draft_archive_path"])
 
     def test_read_script_draft_returns_persisted_goal_metadata(self):
-        from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
 
         written = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -749,7 +749,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         )
 
     def test_read_script_draft_returns_persisted_edit_metadata(self):
-        from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
 
         written = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -766,7 +766,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("intentional_retarget", read["result"]["edit_mode"])
 
     def test_read_script_draft_returns_persisted_semantic_metadata(self):
-        from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
 
         written = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -790,7 +790,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("ORTHOSIS_CONTEXT", read["result"]["live_node_refs"])
 
     def test_write_script_draft_blocks_when_target_tree_is_missing(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         result = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -804,7 +804,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIsNone(sys.modules["bpy"].data.texts.get("GN_Agent_Draft"))
 
     def test_write_script_draft_blocks_when_live_node_reference_is_missing(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         result = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -818,7 +818,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIsNone(sys.modules["bpy"].data.texts.get("GN_Agent_Draft"))
 
     def test_write_script_draft_blocks_when_candidate_drops_existing_live_node_refs(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         first = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -842,7 +842,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("ORTHOSIS_CONTEXT", text_block.as_string())
 
     def test_write_script_draft_blocks_when_candidate_drops_expected_parameters(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         first = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -872,7 +872,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("Palm Width", second["result"]["previous_parameter_refs"])
 
     def test_write_script_draft_blocks_when_candidate_drops_focus_regions(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         first = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -905,7 +905,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("regression_lost_focus_regions", second["error"])
 
     def test_write_script_draft_ignores_generic_frame_focus_regions(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         first = handle_write_script_draft({
             "block_name": "GN_Agent_Draft",
@@ -926,7 +926,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("success", second["status"])
 
     def test_write_script_draft_blocks_when_living_draft_changes_target_tree(self):
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         sys.modules["bpy"].data.node_groups.new("Other_Orthosis_Tree", "GeometryNodeTree")
 
@@ -952,7 +952,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("Biomodelo_GN", text_block.get("_draft_tree_name"))
 
     def test_read_script_draft_prefers_canonical_block_over_legacy_revision_blocks(self):
-        from blender_addon.handlers import handle_read_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft
 
         canonical = sys.modules["bpy"].data.texts.new("GN_Agent_Draft")
         canonical.write(_complete_validation_code("Canonical source"))
@@ -978,7 +978,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual(3, int(read["result"]["version"]))
 
     def test_read_script_draft_can_fallback_to_legacy_revision_when_main_block_is_missing(self):
-        from blender_addon.handlers import handle_read_script_draft
+        from blender_addon.tools.handlers import handle_read_script_draft
 
         legacy = sys.modules["bpy"].data.texts.new("GN_Agent_Draft__rev_000007")
         legacy.write(_complete_validation_code("Legacy recovery source"))
@@ -1273,7 +1273,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers import TurnContext
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -1299,7 +1299,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "Ok, draft criado."
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     raw = handle_write_script_draft(tool_input)
                 elif name == "read_script_draft":
@@ -1345,7 +1345,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -1378,7 +1378,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "Ok, draft corrigido."
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     tool_input = AgentRuntime._normalize_tool_input(self, name, tool_input)
                     raw = handle_write_script_draft(tool_input)
@@ -1428,7 +1428,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -1454,7 +1454,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "feito"
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     tool_input = AgentRuntime._normalize_tool_input(self, name, tool_input)
                     raw = handle_write_script_draft(tool_input)
@@ -1503,7 +1503,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -1529,7 +1529,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "feito"
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     tool_input = AgentRuntime._normalize_tool_input(self, name, tool_input)
                     raw = handle_write_script_draft(tool_input)
@@ -1581,7 +1581,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -1608,7 +1608,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "Ainda nao tenho um diagnostico bom."
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 block_reason = AgentRuntime._enforce_draft_tool_policy(self, name)
                 if block_reason:
                     raw = {"status": "blocked", "error": block_reason, "result": {}}
@@ -1683,7 +1683,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace, handle_execution_feedback
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _RetryRuntime:
             def __init__(self):
@@ -1714,7 +1714,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "feito"
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 block_reason = AgentRuntime._enforce_draft_tool_policy(self, name)
                 if block_reason:
                     raw = {"status": "blocked", "error": block_reason, "result": {}}
@@ -2027,7 +2027,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace, handle_execution_feedback
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _SequenceRuntime:
             def __init__(self, codes: list[str]):
@@ -2056,7 +2056,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "feito"
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 block_reason = AgentRuntime._enforce_draft_tool_policy(self, name)
                 if block_reason:
                     raw = {"status": "blocked", "error": block_reason, "result": {}}
@@ -2162,7 +2162,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.agent_runtime import AgentRuntime
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         sys.modules["bpy"].data.node_groups.new("Other_Orthosis_Tree", "GeometryNodeTree")
 
@@ -2190,7 +2190,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return "feito"
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     tool_input = AgentRuntime._normalize_tool_input(self, name, tool_input)
                     raw = handle_write_script_draft(tool_input)
@@ -2291,7 +2291,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         from blender_addon.runtime.handlers import TurnContext
         from blender_addon.runtime.handlers.drafting import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
-        from blender_addon.handlers import handle_write_script_draft
+        from blender_addon.tools.handlers import handle_write_script_draft
 
         class _FakeRuntime:
             def __init__(self):
@@ -2330,7 +2330,7 @@ class FoundationStabilizationTests(unittest.TestCase):
 
             def _execute_tool(self, name, tool_input, _elapsed):
                 from blender_addon.agent_runtime import AgentRuntime
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 block_reason = AgentRuntime._enforce_draft_tool_policy(self, name)
                 if block_reason:
                     raw = {"status": "blocked", "error": block_reason}
@@ -2396,7 +2396,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return _complete_validation_code("Raw chat code should be saved")
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     raw = handle_write_script_draft(tool_input)
                 elif name == "read_script_draft":
@@ -2449,7 +2449,7 @@ class FoundationStabilizationTests(unittest.TestCase):
                 return _complete_validation_code("Truncated raw code must not be saved")
 
             def _execute_tool(self, name, tool_input, _elapsed):
-                from blender_addon.handlers import handle_read_script_draft, handle_write_script_draft
+                from blender_addon.tools.handlers import handle_read_script_draft, handle_write_script_draft
                 if name == "write_script_draft":
                     raw = handle_write_script_draft(tool_input)
                 elif name == "read_script_draft":
@@ -2836,7 +2836,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual(["Metacarpos"], preserve_input.get("expected_focus_regions"))
 
     def test_prepare_draft_context_aggregates_deterministic_write_context(self):
-        from blender_addon.runtime_dispatch import RuntimeDispatcher
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
 
         dispatcher = RuntimeDispatcher()
         dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
@@ -2954,7 +2954,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("coverage_refresh", payload["prompt_context"])
 
     def test_prepare_draft_context_reports_blockers_when_target_is_unresolved(self):
-        from blender_addon.runtime_dispatch import RuntimeDispatcher
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
 
         dispatcher = RuntimeDispatcher()
         dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
@@ -2978,7 +2978,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("target_tree", payload["prompt_context"])
 
     def test_prepare_draft_context_specializes_diagnosis_mode(self):
-        from blender_addon.runtime_dispatch import RuntimeDispatcher
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
 
         dispatcher = RuntimeDispatcher()
         dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
@@ -3030,7 +3030,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("goal_mode: diagnose_only", payload["prompt_context"])
 
     def test_prepare_draft_context_specializes_focal_correction_mode(self):
-        from blender_addon.runtime_dispatch import RuntimeDispatcher
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
 
         dispatcher = RuntimeDispatcher()
         dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
@@ -3085,7 +3085,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("goal_mode: focal_correction", payload["prompt_context"])
 
     def test_prepare_draft_context_reports_coverage_refresh_when_only_persisted_metadata_exists(self):
-        from blender_addon.runtime_dispatch import RuntimeDispatcher
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
 
         dispatcher = RuntimeDispatcher()
         dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {

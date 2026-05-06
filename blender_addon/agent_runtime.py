@@ -106,13 +106,6 @@ class DraftAttemptState:
 # shared ``Runtime`` mirrors operational saves into Session v1.
 USE_STRUCTURED_SESSION_V1 = bool(int(os.environ.get("ORTHOSIS_USE_STRUCTURED_SESSION_V1", "0") or "0"))
 
-# Knowledge updater calls claude-haiku-4-5 on every successful GN turn to
-# synthesize reusable patterns.  Useful for corpus growth but adds ~300-500
-# invisible tokens of API spend per turn.  Disabled by default in Wave 1 to
-# eliminate silent cost.  Set ORTHOSIS_KNOWLEDGE_UPDATER_ENABLED=1 to re-enable.
-_KNOWLEDGE_UPDATER_ENABLED = bool(
-    int(os.environ.get("ORTHOSIS_KNOWLEDGE_UPDATER_ENABLED", "0") or "0")
-)
 
 
 def load_structured_session_v1(project_root: "Path", blend_path: str = ""):
@@ -815,29 +808,6 @@ class AgentRuntime:
                 )
             except Exception:
                 pass
-
-        # --- Knowledge extraction (background, disabled by default) ---
-        # Enable with: ORTHOSIS_KNOWLEDGE_UPDATER_ENABLED=1
-        if _KNOWLEDGE_UPDATER_ENABLED:
-            try:
-                from .knowledge_updater import maybe_extract_knowledge
-                maybe_extract_knowledge(
-                    journal_session_file=self.journal.session_file,
-                    goal_id=self.journal._current_goal_id or "",
-                    had_errors=bool(getattr(result, "phase_transition", None) == "failed"),
-                    api_key=self.client.api_key,
-                    knowledge_dir=self.knowledge_domain_dir,
-                    client=self.client,
-                )
-            except Exception as _ke:
-                try:
-                    self.journal.log_runtime_event(
-                        event_type="knowledge_extraction_error",
-                        payload={"error": str(_ke)},
-                        status="warning",
-                    )
-                except Exception:
-                    pass
 
         return result.response_text
 

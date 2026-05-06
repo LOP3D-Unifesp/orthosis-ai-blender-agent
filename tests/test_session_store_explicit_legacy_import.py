@@ -81,15 +81,14 @@ class SessionStoreExplicitLegacyImportTests(unittest.TestCase):
 
         return SessionV1Store(project_root=self.project_root)
 
-    def test_load_does_not_call_import_session_files(self):
+    def test_load_does_not_import_legacy_sessions(self):
         blend_path = str((self.project_root / "demo.blend").resolve())
         _write_v1_session(self.legacy_root, blend_path, "legacy only")
 
         store = self._store()
-        with patch("blender_addon.session.store.import_session_files") as import_mock:
-            session = store.load(blend_path)
+        session = store.load(blend_path)
 
-        import_mock.assert_not_called()
+        # load() never auto-imports from sibling project roots — migration is done
         self.assertEqual(len(session.history.messages), 0)
 
     def test_existing_v1_is_not_overwritten_by_legacy_during_load(self):
@@ -129,17 +128,17 @@ class SessionStoreExplicitLegacyImportTests(unittest.TestCase):
         self.assertEqual(session.focus.blend_path, blend_path)
         self.assertFalse(store.v1_path(blend_path).exists())
 
-    def test_explicit_legacy_import_can_still_be_called_manually(self):
+    def test_explicit_legacy_import_is_noop_migration_complete(self):
         blend_path = str((self.project_root / "manual-import.blend").resolve())
         _write_v1_session(self.legacy_root, blend_path, "legacy imported manually")
 
         store = self._store()
         imported = store.import_legacy_sessions_explicit(blend_path)
 
-        self.assertEqual(imported, [store.v1_path(blend_path)])
+        # v1→v2 migration is done; method returns empty list (no-op)
+        self.assertEqual(imported, [])
         session = store.load(blend_path)
-        user_messages = [msg.content for msg in session.history.messages if msg.role == "user"]
-        self.assertIn("legacy imported manually", user_messages)
+        self.assertEqual(len(session.history.messages), 0)
 
 
 if __name__ == "__main__":

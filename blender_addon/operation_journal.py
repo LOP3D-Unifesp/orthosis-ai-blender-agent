@@ -39,8 +39,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .runtime_migration import import_journal_files
-
 
 # Direct mutation op names are not live product metrics in draft-first mode.
 _GN_MUTATION_OPS = frozenset()
@@ -213,7 +211,7 @@ class OperationJournal:
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._sessions_dir.mkdir(parents=True, exist_ok=True)
         self._trash_dir.mkdir(parents=True, exist_ok=True)
-        import_journal_files(project_root)
+        pass  # migration from v1 project root done
         self._lock = threading.Lock()
 
         self._session_id: str = ""

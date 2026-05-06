@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from ..runtime_migration import import_session_files
 from .schema import (
     SCHEMA_VERSION,
     BaselineWorkspace,
@@ -225,17 +224,8 @@ class SessionV1Store:
         return Session.new(blend_path=blend_path)
 
     def import_legacy_sessions_explicit(self, blend_path: str = "") -> list[Path]:
-        """Manually import legacy sessions from sibling project roots.
-
-        This entrypoint exists for explicit recovery workflows only and must
-        never be called implicitly during normal session reads.
-        """
-        imported = import_session_files(self.project_root, blend_path)
-        _diag(
-            "store.import_legacy",
-            f"EXPLICIT blend_path={blend_path!r} imported={len(imported)}",
-        )
-        return imported
+        """No-op: v1→v2 migration completed. Kept for API compat."""
+        return []
 
     def diagnose_v1_session(self, blend_path: str = "") -> dict[str, Any]:
         """Describe the current V1 session, sibling candidates, and archives."""

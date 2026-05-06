@@ -9,26 +9,6 @@ from typing import Any
 
 TOOLS = [
     {
-        "name": "make_plan",
-        "description": (
-            "Must be called before execute_code in any turn with modifications. "
-            "This registers the plan in history and does not execute Blender actions."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "goal": {"type": "string", "description": "What will be done and why"},
-                "steps": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Ordered steps",
-                },
-                "risks": {"type": "string", "description": "Known risks and checks"},
-            },
-            "required": ["goal", "steps"],
-        },
-    },
-    {
         "name": "get_scene_summary",
         "description": "Read global scene state and GN host presence.",
         "input_schema": {"type": "object", "properties": {}},
@@ -235,21 +215,6 @@ TOOLS = [
         },
     },
     {
-        "name": "apply_simulator_payload",
-        "description": "Map simulator JSON values to GN parameters and apply atomically.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "tree_name": {"type": "string"},
-                "payload": {"type": "object"},
-                "mapping": {"type": "object"},
-                "strict": {"type": "boolean", "default": False},
-                "transactional": {"type": "boolean", "default": True},
-            },
-            "required": ["tree_name", "payload"],
-        },
-    },
-    {
         "name": "execute_code",
         "description": (
             "Execute Python directly in Blender when no structured tool can do the task. "
@@ -429,11 +394,7 @@ TOOLS = [
 
 
 _DRAFT_FIRST_EXCLUDED_AGENT_TOOLS = {
-    "make_plan",
     "execute_code",
-    "apply_simulator_payload",
-    "rename_object",
-    "move_to_collection",
 }
 
 AGENT_TOOLS: list[dict] = [
@@ -528,15 +489,6 @@ def dispatch_tool_raw(
             tool_input = dict(tool_input)
             tool_input["code"] = tool_input.get("script", "")
             tool_input.pop("script", None)
-    if tool_name == "make_plan":
-        return {
-            "status": "success",
-            "tool_name": "make_plan",
-            "result": {
-                "note": "Plan recorded. Now call execute_code with the complete Python/bpy script.",
-            },
-        }
-
     command = {
         "type": "runtime_tool_call",
         "tool_name": tool_name,

@@ -108,15 +108,15 @@ class SessionArchiveResetTests(unittest.TestCase):
             "Expected session_archived_and_reset runtime event in journal",
         )
 
-    def test_archive_reset_does_not_call_import_legacy(self):
+    def test_archive_reset_does_not_import_legacy(self):
         blend_path = str((self.project_root / "testeAgenteBlender.blend").resolve())
         self._write_v1(blend_path, "histórico antigo do blend principal")
 
         store = self._store()
-        with patch("blender_addon.session.store.import_session_files") as import_mock:
-            store.archive_and_reset_v1_session(blend_path)
-
-        import_mock.assert_not_called()
+        # archive_and_reset should complete without errors; no legacy import occurs
+        store.archive_and_reset_v1_session(blend_path)
+        session = store.load(blend_path)
+        self.assertEqual(len(session.history.messages), 0)
 
     def test_diagnose_session_lists_current_candidates_and_archive(self):
         blend_path = str((self.project_root / "testeAgenteBlender.blend").resolve())

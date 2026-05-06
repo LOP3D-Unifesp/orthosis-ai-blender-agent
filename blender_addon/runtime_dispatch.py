@@ -78,7 +78,6 @@ class RuntimeDispatcher:
         "undo":                        "_tool_undo",
         "execute_code":                "_tool_execute_code",
         "query_node_types":            "_tool_query_node_types",
-        "apply_simulator_payload":     "_tool_apply_simulator_payload",
         "write_script_draft":          "_tool_write_script_draft",
         "read_script_draft":           "_tool_read_script_draft",
         # Onda 5 (Item 5.3): snapshot tools — UI-only, never called by agent
@@ -214,9 +213,6 @@ class RuntimeDispatcher:
 
     def _tool_query_node_types(self, tool_input, **_):
         return handlers.handle_query_node_types(tool_input)
-
-    def _tool_apply_simulator_payload(self, tool_input, **_):
-        return self._apply_simulator_payload(tool_input)
 
     def _tool_list_tree_nodes(self, tool_input, **_):
         tree_name = tool_input.get("tree_name", "")
@@ -2255,30 +2251,3 @@ class RuntimeDispatcher:
         image_base64 = stdout.split(marker, 1)[1].strip()
         return {"status": "success", "result": {"image_base64": image_base64}}
 
-    def _apply_simulator_payload(self, tool_input: dict[str, Any]) -> dict[str, Any]:
-        from .simulator_mapper import build_gn_ops_from_simulator_payload
-
-        tree_name = tool_input.get("tree_name", "")
-        payload = tool_input.get("payload", {})
-        if not tree_name:
-            return _json_error("Missing required input: tree_name")
-        if not isinstance(payload, dict):
-            return _json_error("Invalid payload: expected object")
-
-        ops = build_gn_ops_from_simulator_payload(
-            tree_name=tree_name,
-            payload=payload,
-            mapping=tool_input.get("mapping"),
-            strict=bool(tool_input.get("strict", False)),
-        )
-        if not ops:
-            return _json_error("Simulator payload produced no GN operations")
-
-        self._invalidate_tree_cache(tree_name)
-        return handlers.handle_apply_gn_edits(
-            {
-                "target_tree": tree_name,
-                "operations": ops,
-                "transactional": bool(tool_input.get("transactional", True)),
-            }
-        )

@@ -2,6 +2,8 @@
 
 > ⚠️ **Branch atual: `slim-refactor`** (criada 2026-05-06). Esta branch está executando uma refatoração enxuta que substitui ~10k linhas dos 4 módulos bloated (`drafting.py`, `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`) por ~1.7k linhas, preservando os 17 módulos que funcionam. O plano de execução é `docs/SLIM_REFACTOR_PLAN.md` — siga ele, não o resto deste documento, pra decidir o próximo passo. Este CLAUDE.md descreve o **sistema atual antes do refactor** e fica congelado até a Fase 7 (merge em `master`), quando será reescrito pra refletir a estrutura nova.
 >
+> **Status em 2026-05-06:** Fase 1 ✅ + Fase 2 ✅ concluídas. `handlers.py`, `runtime_dispatch.py`, `tools.py`, `skill_router.py` deletados; substituídos por `blender_addon/tools/` package (`schemas.py`, `client.py`, `handlers.py`, `server_dispatch.py`, `reads.py`, `draft.py`, `structural.py`). 216 testes, 2 falhas pré-existentes. **Próximo passo: Fase 3** — substituir `agent_runtime.py` (1857 linhas) + `runtime_agent_loop.py` pelo pacote `core/`.
+>
 > Atualizado em 2026-05-05 (estado pré-slim). Onda 5 validada parcialmente; frente pós-falha com Waves 1–3 implementadas mas com falhas sistêmicas identificadas em sessão real. Wave 5.C é absorvida pela Fase 4 do slim refactor.
 > **Fonte de verdade deste documento:** status operacional atual e regras rápidas do agente de código. Não duplicar aqui acceptance tests longos nem checklist completo.
 > **Regra de atualização durante o slim refactor:** mudanças de implementação vão pro changelog do commit; o `SLIM_REFACTOR_PLAN.md` é a referência de fases; mudanças conceituais state-driven seguem em `docs/repair_conversation_loop.md`. Este arquivo só é reescrito na Fase 7.

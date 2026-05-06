@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolInputsSubset",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "apply_simulator_payload": {
+      "type": "object",
+      "required": [
+        "tree_name",
+        "payload"
+      ],
+      "properties": {
+        "tree_name": { "type": "string" },
+        "payload": { "type": "object" },
+        "mapping": { "type": "object" },
+        "strict": { "type": "boolean" },
+        "transactional": { "type": "boolean" }
+      }
+    }
+  }
+}

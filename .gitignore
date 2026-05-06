@@ -1,0 +1,26 @@
+# Runtime state — generated automatically by the addon at startup
+runtime/
+
+# Python bytecode
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.zip
+dist/
+
+# Claude Code workspace metadata
+.claude/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Blender working files (too large, binary, churn-heavy — track separately if needed)
+*.blend
+*.blend1
+
+# Local temp dirs
+tmpn1o45sw2/
+tmp*/

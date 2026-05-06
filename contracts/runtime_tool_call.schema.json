@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RuntimeToolCall",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "tool_name",
+    "tool_input",
+    "route",
+    "output_mode",
+    "user_confirmed"
+  ],
+  "properties": {
+    "type": {
+      "const": "runtime_tool_call"
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_input": {
+      "type": "object"
+    },
+    "route": {
+      "type": "string",
+      "enum": [
+        "product",
+        "mcp"
+      ]
+    },
+    "output_mode": {
+      "type": "string",
+      "enum": [
+        "compact",
+        "verbose",
+        "debug"
+      ]
+    },
+    "user_confirmed": {
+      "type": "boolean"
+    },
+    "debug_mode": {
+      "type": "boolean"
+    },
+    "explicit_override_mode": {
+      "type": "boolean"
+    },
+    "mcp_write_enabled": {
+      "type": "boolean"
+    },
+    "blend_path": {
+      "type": "string"
+    }
+  }
+}
+

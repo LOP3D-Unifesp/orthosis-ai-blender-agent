@@ -4,30 +4,38 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from copy import deepcopy
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .project_paths import resolve_project_root
-from .runtime_planning import (
+from ..project_paths import resolve_project_root
+from ..runtime_planning import (
     FOCAL_READ_TOOLS,
     build_structural_index_entry,
     extract_node_name,
     extract_tree_name,
 )
-from .runtime_agent_loop import agent_loop, send_screenshot_turn
-from .runtime_api_client import (
+from .agent_loop import agent_loop, send_screenshot_turn
+from .api_client import (
     extract_text,
     is_transient_api_error,
     request_text_with_retry,
     request_with_retry,
     stream_with_retry,
 )
-from .runtime import state_ops
-from .runtime.gn_targeting import canonicalize_gn_tool_input
-from .tools import TOOLS, AGENT_TOOLS, dispatch_tool_raw
+from .tool_policy import (
+    BLOCKED_PRODUCT_TOOLS as _BLOCKED_PRODUCT_TOOLS,
+    DRAFT_BROAD_READ_TOOLS as _DRAFT_BROAD_READ_TOOLS,
+    DRAFT_FOCAL_READ_TOOLS as _DRAFT_FOCAL_READ_TOOLS,
+    DraftAttemptContract,
+    DraftAttemptState,
+)
+from ..runtime import state_ops
+from ..runtime.gn_targeting import canonicalize_gn_tool_input
+from ..tools import TOOLS, AGENT_TOOLS, dispatch_tool_raw
 
 
 BASE_SYSTEM_PROMPT = """\
@@ -46,58 +54,6 @@ Core stance:
 
 _MAX_RETRIES = 2
 _RETRY_WAIT_SECONDS = [4, 10]
-_BLOCKED_PRODUCT_TOOLS = {
-    "make_plan",
-    "execute_code",
-    "apply_simulator_payload",
-    "rename_object",
-    "move_to_collection",
-}
-_DRAFT_BROAD_READ_TOOLS = {
-    "get_scene_summary",
-    "get_gn_hosts",
-    "prepare_draft_context",
-    "resolve_gn_workspace",
-    "build_tree_structural_memory",
-    "list_tree_nodes",
-    "get_tree_parameters",
-}
-_DRAFT_FOCAL_READ_TOOLS = {
-    "get_node_context",
-    "get_selected_nodes_context",
-    "get_active_frame_context",
-    "get_local_subgraph_context",
-    "find_tree_nodes",
-    "get_changes_since_last_turn",
-}
-
-
-@dataclass
-class DraftAttemptContract:
-    require_read_before_write: bool = True
-    allow_write_when_source_missing: bool = False
-    require_target_tree_for_write: bool = False
-    require_structural_memory_for_write: bool = False
-    require_context_evidence_for_write: bool = False
-    require_prepared_context_for_write: bool = False
-    block_when_prepared_context_has_blockers: bool = False
-
-
-@dataclass
-class DraftAttemptState:
-    source_read_attempted: bool = False
-    source_read_succeeded: bool = False
-    source_block_missing: bool = False
-    target_tree: str = ""
-    target_resolved: bool = False
-    structural_memory_ready: bool = False
-    evidence_reads: int = 0
-    prepared_context_read: bool = False
-    prepared_context_blockers: list[str] = field(default_factory=list)
-    write_attempted: bool = False
-    write_succeeded: bool = False
-    last_block_reason: str = ""
-
 # ---------------------------------------------------------------------------
 # Phase 1 of REFATOR_PLAN.md — structured session schema (v1).
 #
@@ -115,7 +71,7 @@ def load_structured_session_v1(project_root: "Path", blend_path: str = ""):
     the live runtime path. Returns a ``Session`` object from
     ``blender_addon.session``.
     """
-    from .session import SessionV1Store
+    from ..session import SessionV1Store
 
     return SessionV1Store(project_root=project_root).load(blend_path)
 
@@ -142,7 +98,7 @@ def _make_history_summariser(runtime: Any) -> Any:
     by ``BoundedHistory._enforce_bound`` — a failing summariser never breaks
     history writes.
     """
-    from .model_policy import LIGHT_MODEL
+    from ..model_policy import LIGHT_MODEL
 
     def _summarise(evicted: list[Any], older_summary: str | None) -> str | None:
         if not evicted:
@@ -189,7 +145,7 @@ class AgentRuntime:
         runtime: Any | None = None,
     ):
         if runtime is None:
-            from .runtime import Runtime
+            from ..runtime import Runtime
 
             resolved_project_root = _resolve_runtime_project_root(project_root)
             runtime = Runtime(project_root=resolved_project_root)
@@ -251,9 +207,10 @@ class AgentRuntime:
         image_blocks: list[dict[str, Any]] | None = None,
         attachment_text_blocks: list[dict[str, Any]] | None = None,
     ) -> str:
-        """Draft-first turn entry point: route via TurnRouter, then handler."""
-        from .runtime.router import TurnRouter
-        from .runtime.handlers import TurnContext, dispatch_turn
+        """Draft-first turn entry point with direct workspace goal dispatch."""
+        from ..runtime.router import ClassifierMeta, TurnClass
+        from ..handler import TurnContext
+        from ..handler import workspace
 
         # --- Per-turn reset ---
         self._tool_step = 0
@@ -449,7 +406,7 @@ class AgentRuntime:
 
         pending_resolution = None
         try:
-            from .runtime.pending_decision import (
+            from ..runtime.pending_decision import (
                 clarification_response as _pending_clarification_response,
                 resolve_pending_decision as _resolve_pending_decision,
             )
@@ -466,7 +423,7 @@ class AgentRuntime:
                     except Exception:
                         pass
                     try:
-                        from .session import compute_next_state as _pd_compute_next_state
+                        from ..session import compute_next_state as _pd_compute_next_state
                         _prev_pd_state = str(getattr(session.execution_state, "session_state", "") or "IDLE")
                         _next_pd_state = _pd_compute_next_state(session)
                         session.execution_state.session_state = _next_pd_state
@@ -500,7 +457,7 @@ class AgentRuntime:
         # (The "awaiting_confirmation" phase guard that was here was removed in
         # Onda 1F-B — the purge block above ensures phase is always valid here.)
         try:
-            from .fast_path import try_fast_path
+            from ..fast_path import try_fast_path
             _fp_result = try_fast_path(user_message, session=session, runtime=self)
         except Exception:
             _fp_result = None
@@ -518,7 +475,7 @@ class AgentRuntime:
                 except Exception:
                     pass
             try:
-                from .session.history import BoundedHistory
+                from ..session.history import BoundedHistory
                 _bh = BoundedHistory(session.history)
                 _bh.append(role="user",      content=user_message, turn_class="fast_path")
                 _bh.append(role="assistant", content=_fast_text,   turn_class="fast_path")
@@ -529,7 +486,7 @@ class AgentRuntime:
             )
             # Onda 3: refresh persisted session_state on fast-path turns too.
             try:
-                from .session import compute_next_state as _fp_compute_next_state
+                from ..session import compute_next_state as _fp_compute_next_state
                 _fp_prev = str(getattr(session.execution_state, "session_state", "") or "IDLE")
                 _fp_next = _fp_compute_next_state(session)
                 session.execution_state.session_state = _fp_next
@@ -564,11 +521,8 @@ class AgentRuntime:
                 pass
             return _fast_text
 
-        # --- Handle awaiting_confirmation override ---
-        # The router still detects "awaiting_confirmation" as a legacy string
-        # and emits "legacy_awaiting_confirmation_purged" signal; clear state.
-        _router = TurnRouter()
-        turn_class, meta = _router.classify(session, user_message)
+        # --- Simple intent inference for the slim runtime ---
+        turn_class, meta, goal_mode = self._infer_turn_intent(session, user_message)
         _pending_after_resolution = getattr(session.execution_state, "pending_user_decision", None)
         _pending_write_approval = (
             pending_resolution is not None
@@ -577,12 +531,12 @@ class AgentRuntime:
         )
         if _pending_write_approval:
             try:
-                from .runtime.router import TurnClass as _TurnClass
-                turn_class = _TurnClass.DRAFT_WORKSPACE
+                turn_class = TurnClass.DRAFT_WORKSPACE
                 meta.turn_class = turn_class
                 meta.turn_intent = "strategy_approval"
                 meta.session_state = "STRATEGY_APPROVED"
                 meta.goal_mode = "focal_correction"
+                goal_mode = "focal_correction"
                 if "pending_decision_resolved" not in meta.signals:
                     meta.signals.append("pending_decision_resolved")
                 _kind_log = str(getattr(_pending_after_resolution, "kind", "") or "")
@@ -606,15 +560,15 @@ class AgentRuntime:
                 )
             except Exception:
                 pass
-            turn_class, meta = _router.classify(session, user_message)
+            turn_class, meta, goal_mode = self._infer_turn_intent(session, user_message)
             if _pending_write_approval:
                 try:
-                    from .runtime.router import TurnClass as _TurnClass
-                    turn_class = _TurnClass.DRAFT_WORKSPACE
+                    turn_class = TurnClass.DRAFT_WORKSPACE
                     meta.turn_class = turn_class
                     meta.turn_intent = "strategy_approval"
                     meta.session_state = "STRATEGY_APPROVED"
                     meta.goal_mode = "focal_correction"
+                    goal_mode = "focal_correction"
                     if "pending_decision_resolved" not in meta.signals:
                         meta.signals.append("pending_decision_resolved")
                 except Exception:
@@ -622,7 +576,7 @@ class AgentRuntime:
 
         # --- Routing observability log (read-only; no dispatch impact) ---
         try:
-            from .runtime.routing_obs import compute_shadow_handler
+            from ..runtime.routing_obs import compute_shadow_handler
             _shadow = compute_shadow_handler(
                 turn_intent=str(getattr(meta, "turn_intent", "") or ""),
                 session_state=str(getattr(meta, "session_state", "") or ""),
@@ -669,7 +623,7 @@ class AgentRuntime:
         # Temporarily override self.model so every API call made by the handler
         # (via _agent_loop or _request_text_response) uses the turn-appropriate
         # model.  Restored unconditionally in the finally block.
-        from .model_policy import select_model as _select_model, select_max_tokens as _select_max_tokens
+        from ..model_policy import select_model as _select_model, select_max_tokens as _select_max_tokens
         _turn_model = _select_model(str(turn_class.value), self.model, user_message)
         _turn_max_tokens = _select_max_tokens(str(turn_class.value))
         _saved_model = self.model
@@ -690,7 +644,7 @@ class AgentRuntime:
         # --- Dispatch ---
         try:
             _messages_len_before_dispatch = len(self._messages)
-            result = dispatch_turn(turn_class, ctx)
+            result = workspace.handle(ctx, goal_mode)
         finally:
             # Always restore the original model, even if dispatch raises.
             self.model = _saved_model
@@ -726,7 +680,7 @@ class AgentRuntime:
 
         # --- Update in-memory session history (for agent context) ---
         try:
-            from .session.history import BoundedHistory
+            from ..session.history import BoundedHistory
             bh = BoundedHistory(session.history, summariser=_make_history_summariser(self))
             bh.append(role="user", content=user_message, turn_class=_tc)
             bh.append(role="assistant", content=result.response_text, turn_class=_tc)
@@ -746,7 +700,7 @@ class AgentRuntime:
         # --- Onda 3: compute & persist next session_state ---
         # Runs before save_v1_session so the V1 JSON mirrors the dedicated file.
         try:
-            from .session import compute_next_state as _compute_next_state
+            from ..session import compute_next_state as _compute_next_state
             _prev_state = str(getattr(session.execution_state, "session_state", "") or "IDLE")
             _pending = getattr(session.execution_state, "pending_user_decision", None)
             _pending_status = str(getattr(_pending, "status", "") or "") if _pending is not None else ""
@@ -810,6 +764,84 @@ class AgentRuntime:
                 pass
 
         return result.response_text
+
+    @staticmethod
+    def _infer_turn_intent(session: Any, user_message: str):
+        """Infer the slim workspace goal using the four Phase-3 rules."""
+        from ..runtime.router import ClassifierMeta, TurnClass
+
+        text = str(user_message or "").strip()
+        lowered = text.lower()
+        es = getattr(session, "execution_state", None)
+        pending = getattr(es, "pending_user_decision", None) if es is not None else None
+        pending_status = str(getattr(pending, "status", "") or "")
+        has_active_draft = (
+            getattr(es, "current_draft", None) is not None
+            or int(getattr(es, "draft_revision", 0) or 0) > 0
+            or bool(getattr(es, "drafting_mode", False))
+        ) if es is not None else False
+
+        signals: list[str] = []
+        if pending_status == "answered":
+            signals.append("pending_decision_resolved")
+            meta = ClassifierMeta(
+                turn_class=TurnClass.DRAFT_WORKSPACE,
+                signals=signals,
+                raw_message=text,
+                turn_intent="strategy_approval",
+                session_state=str(getattr(es, "session_state", "") or "STRATEGY_APPROVED"),
+                goal_mode="focal_correction",
+            )
+            return TurnClass.DRAFT_WORKSPACE, meta, "focal_correction"
+
+        if text.startswith("[RESULTADO DE EXECUÇÃO"):
+            signals.append("execution_result_prefix")
+            meta = ClassifierMeta(
+                turn_class=TurnClass.EXECUTION_FEEDBACK,
+                signals=signals,
+                raw_message=text,
+                turn_intent="feedback_fix",
+                session_state=str(getattr(es, "session_state", "") or ""),
+                goal_mode="feedback_fix",
+            )
+            return TurnClass.EXECUTION_FEEDBACK, meta, "feedback_fix"
+
+        write_request = bool(re.search(
+            r"\b("
+            r"escrev\w*|salv\w*|ger\w*|cri\w*|faz\w*|corrig\w*|corrij\w*|"
+            r"ajust\w*|arrum\w*|consert\w*|reescrev\w*|refa\w*|alter\w*|"
+            r"mud\w*|implement\w*|apli\w*|"
+            r"write\w*|save\w*|generate\w*|create\w*|fix\w*|adjust\w*|rewrite\w*|implement\w*"
+            r")\b",
+            lowered,
+            re.IGNORECASE,
+        ))
+        if write_request:
+            signals.append("explicit_write_imperative")
+            goal_mode = "focal_correction" if has_active_draft else "functional_expansion"
+            meta = ClassifierMeta(
+                turn_class=TurnClass.DRAFT_WORKSPACE,
+                signals=signals,
+                raw_message=text,
+                turn_intent="draft_refinement" if has_active_draft else "draft_write",
+                session_state=str(getattr(es, "session_state", "") or ""),
+                goal_mode=goal_mode,
+                needs_baseline_refresh=True,
+            )
+            return TurnClass.DRAFT_WORKSPACE, meta, goal_mode
+
+        signals.append("default_inquiry")
+        meta = ClassifierMeta(
+            turn_class=TurnClass.CONTEXT_INQUIRY,
+            confidence="low",
+            signals=signals,
+            raw_message=text,
+            turn_intent="pure_inquiry",
+            session_state=str(getattr(es, "session_state", "") or ""),
+            goal_mode="inquiry",
+            needs_baseline_refresh=True,
+        )
+        return TurnClass.CONTEXT_INQUIRY, meta, "inquiry"
 
     @staticmethod
     def _sync_operational_state_to_session(session: Any, runtime_state: dict[str, Any]) -> None:
@@ -1533,6 +1565,90 @@ class AgentRuntime:
             f"BLOCKED: {tool_name} is outside the draft-turn read budget "
             f"({reason}). Use current draft, execution metadata, and tree_structural_memory."
         )
+
+    def _after_tool_result(self, tool_name: str, result: str) -> str:
+        """Generic post-tool hook used by the multi-round loop."""
+        if tool_name != "write_script_draft":
+            return ""
+        try:
+            parsed_result = json.loads(result)
+        except Exception:
+            parsed_result = {}
+        write_blocked = isinstance(parsed_result, dict) and str(parsed_result.get("status") or "") == "blocked"
+        write_succeeded = (
+            isinstance(parsed_result, dict)
+            and (
+                str(parsed_result.get("status") or "") == "success"
+                or bool(parsed_result.get("block_name") and parsed_result.get("version"))
+                or bool(parsed_result.get("block_name") and parsed_result.get("char_count"))
+            )
+        )
+        if write_succeeded:
+            self._halt_execution = True
+            self._halt_message = "Draft salvo com sucesso; encerrando o turno para reportar a revisão."
+            try:
+                self.journal.log_runtime_event(
+                    event_type="agent_loop_halted_after_draft_write",
+                    payload={
+                        "tool_name": tool_name,
+                        "version": parsed_result.get("version", 0) if isinstance(parsed_result, dict) else 0,
+                        "char_count": parsed_result.get("char_count", 0) if isinstance(parsed_result, dict) else 0,
+                        "reason": "draft_write_succeeded",
+                    },
+                )
+            except Exception:
+                pass
+            return "halt"
+        if not write_blocked:
+            return ""
+
+        result_payload = parsed_result.get("result", {}) if isinstance(parsed_result.get("result"), dict) else {}
+        reject_reason = str(result_payload.get("reject_reason") or "")
+        semantic_block = reject_reason.startswith((
+            "regression_lost_live_node_refs",
+            "regression_replaced_live_node_refs",
+            "regression_lost_expected_parameters",
+            "regression_replaced_expected_parameters",
+            "regression_lost_focus_regions",
+            "regression_replaced_focus_regions",
+            "target_tree_changed:",
+            "regression_candidate_too_small_vs_existing:",
+        ))
+        blocked_write_count = sum(
+            1
+            for item in getattr(self, "_current_turn_tools", [])
+            if isinstance(item, dict)
+            and str(item.get("name") or "") == tool_name
+            and str(item.get("status") or "") == "blocked"
+        )
+        if semantic_block and blocked_write_count <= 1:
+            try:
+                self.journal.log_runtime_event(
+                    event_type="agent_loop_continued_after_draft_write_blocked",
+                    payload={
+                        "tool_name": tool_name,
+                        "reject_reason": reject_reason[:200],
+                        "blocked_write_count": blocked_write_count,
+                    },
+                    status="warning",
+                )
+            except Exception:
+                pass
+            return "continue"
+        self._halt_execution = True
+        self._halt_message = "Draft bloqueado pela validacao; encerrando o turno para reportar o motivo."
+        try:
+            self.journal.log_runtime_event(
+                event_type="agent_loop_halted_after_draft_write_blocked",
+                payload={
+                    "tool_name": tool_name,
+                    "error": str(parsed_result.get("error") or "")[:300],
+                },
+                status="blocked",
+            )
+        except Exception:
+            pass
+        return "halt"
 
     def _send_screenshot_turn(self, screenshot_result: str) -> str:
         return send_screenshot_turn(self, screenshot_result)

@@ -53,6 +53,55 @@ _TOOL_STATUS_PT: dict[str, str] = {
 }
 
 
+def _default_after_tool_result(runtime: Any, tool_name: str, result: str) -> str:
+    if tool_name != "write_script_draft":
+        return ""
+    try:
+        parsed_result = json.loads(result)
+    except Exception:
+        parsed_result = {}
+    write_blocked = isinstance(parsed_result, dict) and str(parsed_result.get("status") or "") == "blocked"
+    write_succeeded = (
+        isinstance(parsed_result, dict)
+        and (
+            str(parsed_result.get("status") or "") == "success"
+            or bool(parsed_result.get("block_name") and parsed_result.get("version"))
+            or bool(parsed_result.get("block_name") and parsed_result.get("char_count"))
+        )
+    )
+    if write_succeeded:
+        runtime._halt_execution = True
+        runtime._halt_message = "Draft salvo com sucesso; encerrando o turno para reportar a revisão."
+        try:
+            runtime.journal.log_runtime_event(
+                event_type="agent_loop_halted_after_draft_write",
+                payload={
+                    "tool_name": tool_name,
+                    "version": parsed_result.get("version", 0) if isinstance(parsed_result, dict) else 0,
+                    "char_count": parsed_result.get("char_count", 0) if isinstance(parsed_result, dict) else 0,
+                },
+            )
+        except Exception:
+            pass
+        return "halt"
+    if write_blocked:
+        runtime._halt_execution = True
+        runtime._halt_message = "Draft bloqueado pela validacao; encerrando o turno para reportar o motivo."
+        try:
+            runtime.journal.log_runtime_event(
+                event_type="agent_loop_halted_after_draft_write_blocked",
+                payload={
+                    "tool_name": tool_name,
+                    "error": str(parsed_result.get("error") or "")[:300],
+                },
+                status="blocked",
+            )
+        except Exception:
+            pass
+        return "halt"
+    return ""
+
+
 def _truncate_result(text: str, tool_name: str = "") -> str:
     """Truncate a tool result string, preserving a note about truncation."""
     max_chars = _MAX_READ_RESULT_CHARS if tool_name in _HEAVY_READ_TOOLS else _MAX_TOOL_RESULT_CHARS
@@ -363,81 +412,14 @@ def agent_loop(
                         "content": _truncate_result(result, block.name),
                     }
                 )
-                if block.name == "write_script_draft":
-                    try:
-                        parsed_result = json.loads(result)
-                    except Exception:
-                        parsed_result = {}
-                    write_blocked = isinstance(parsed_result, dict) and str(parsed_result.get("status") or "") == "blocked"
-                    write_succeeded = (
-                        isinstance(parsed_result, dict)
-                        and (
-                            str(parsed_result.get("status") or "") == "success"
-                            or bool(parsed_result.get("block_name") and parsed_result.get("version"))
-                            or bool(parsed_result.get("block_name") and parsed_result.get("char_count"))
-                        )
-                    )
-                    if write_succeeded:
-                        runtime._halt_execution = True
-                        runtime._halt_message = "Draft salvo com sucesso; encerrando o turno para reportar a revisão."
-                        try:
-                            runtime.journal.log_runtime_event(
-                                event_type="agent_loop_halted_after_draft_write",
-                                payload={
-                                    "tool_name": block.name,
-                                    "version": parsed_result.get("version", 0) if isinstance(parsed_result, dict) else 0,
-                                    "char_count": parsed_result.get("char_count", 0) if isinstance(parsed_result, dict) else 0,
-                                },
-                            )
-                        except Exception:
-                            pass
-                    elif write_blocked:
-                        result_payload = parsed_result.get("result", {}) if isinstance(parsed_result.get("result"), dict) else {}
-                        reject_reason = str(result_payload.get("reject_reason") or "")
-                        semantic_block = reject_reason.startswith((
-                            "regression_lost_live_node_refs",
-                            "regression_replaced_live_node_refs",
-                            "regression_lost_expected_parameters",
-                            "regression_replaced_expected_parameters",
-                            "regression_lost_focus_regions",
-                            "regression_replaced_focus_regions",
-                            "target_tree_changed:",
-                            "regression_candidate_too_small_vs_existing:",
-                        ))
-                        blocked_write_count = sum(
-                            1
-                            for item in getattr(runtime, "_current_turn_tools", [])
-                            if isinstance(item, dict)
-                            and str(item.get("name") or "") == "write_script_draft"
-                            and str(item.get("status") or "") == "blocked"
-                        )
-                        if semantic_block and blocked_write_count <= 1:
-                            try:
-                                runtime.journal.log_runtime_event(
-                                    event_type="agent_loop_continued_after_draft_write_blocked",
-                                    payload={
-                                        "tool_name": block.name,
-                                        "reject_reason": reject_reason[:200],
-                                        "blocked_write_count": blocked_write_count,
-                                    },
-                                    status="warning",
-                                )
-                            except Exception:
-                                pass
-                            continue
-                        runtime._halt_execution = True
-                        runtime._halt_message = "Draft bloqueado pela validacao; encerrando o turno para reportar o motivo."
-                        try:
-                            runtime.journal.log_runtime_event(
-                                event_type="agent_loop_halted_after_draft_write_blocked",
-                                payload={
-                                    "tool_name": block.name,
-                                    "error": str(parsed_result.get("error") or "")[:300],
-                                },
-                                status="blocked",
-                            )
-                        except Exception:
-                            pass
+                after_tool = getattr(runtime, "_after_tool_result", None)
+                action = (
+                    after_tool(block.name, result)
+                    if callable(after_tool)
+                    else _default_after_tool_result(runtime, block.name, result)
+                )
+                if action == "continue":
+                    continue
                 if runtime._halt_execution:
                     messages.append({"role": "user", "content": tool_results})
                     return runtime._halt_message or result

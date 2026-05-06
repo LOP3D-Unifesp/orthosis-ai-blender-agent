@@ -89,7 +89,7 @@ def _session_with_failed_draft():
 
 
 def _ctx(session, runtime, message="Rodei e mexeu falange, nada a ver. Reverti."):
-    from blender_addon.runtime.handlers import TurnContext
+    from blender_addon.handler import TurnContext
     from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
     return TurnContext(
@@ -122,7 +122,7 @@ def _archived_draft():
 
 class RepairConversationLoopTests(unittest.TestCase):
     def test_post_failure_handler_sets_pending_decision_for_ab_options(self) -> None:
-        from blender_addon.runtime.handlers.drafting import handle_execution_feedback
+        from blender_addon.handler.feedback import handle_execution_feedback
 
         response = (
             "O conflito central é: draft claims no falanges changed, but touched nodes/frames include "
@@ -134,7 +134,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         session = _session_with_failed_draft()
         runtime = _Runtime(response)
 
-        with patch("blender_addon.runtime.handlers.drafting._read_archived_draft_revision", return_value=_archived_draft()):
+        with patch("blender_addon.handler.feedback_evidence._read_archived_draft_revision", return_value=_archived_draft()):
             result = handle_execution_feedback(_ctx(session, runtime))
 
         decision = session.execution_state.pending_user_decision
@@ -147,7 +147,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertTrue(any(e["event_type"] == "pending_decision_proposed" for e in runtime.journal.events))
 
     def test_static_evidence_mismatch_forces_fallback_to_use_real_mismatch(self) -> None:
-        from blender_addon.runtime.handlers.drafting import handle_execution_feedback
+        from blender_addon.handler.feedback import handle_execution_feedback
 
         generic = (
             "Pode ser problema de sockets ou links.\n"
@@ -158,7 +158,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         session = _session_with_failed_draft()
         runtime = _Runtime(generic)
 
-        with patch("blender_addon.runtime.handlers.drafting._read_archived_draft_revision", return_value=_archived_draft()):
+        with patch("blender_addon.handler.feedback_evidence._read_archived_draft_revision", return_value=_archived_draft()):
             result = handle_execution_feedback(_ctx(session, runtime))
 
         self.assertIn("draft claims no falanges changed, but touched nodes/frames include falange-related names", result.response_text)
@@ -170,7 +170,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertTrue(payload["diagnosis_contract_satisfied"])
 
     def test_fallback_varies_with_evidence(self) -> None:
-        from blender_addon.runtime.handlers.drafting import _fallback_post_failure_diagnosis
+        from blender_addon.handler.feedback import _fallback_post_failure_diagnosis
 
         first = _fallback_post_failure_diagnosis(
             block_name="GN_Agent_Draft",
@@ -200,7 +200,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertIn("TF_X", second)
 
     def test_static_evidence_detects_socket_alias_component_writes(self) -> None:
-        from blender_addon.runtime.handlers.drafting import _extract_failed_draft_static_evidence
+        from blender_addon.handler.feedback import _extract_failed_draft_static_evidence
 
         code = (
             "nodes = tree.nodes\n"
@@ -219,7 +219,7 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertEqual(2, evidence["counts"]["default_value_writes"])
 
     def test_minimum_useful_analysis_does_not_fabricate_ab(self) -> None:
-        from blender_addon.runtime.handlers.drafting import _minimum_useful_analysis_response
+        from blender_addon.handler.feedback import _minimum_useful_analysis_response
 
         response = _minimum_useful_analysis_response(
             block_name="GN_Agent_Draft",

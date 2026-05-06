@@ -36,7 +36,7 @@ try:
 except ImportError:
     anthropic = None
 
-from ..agent_runtime import AgentRuntime
+from ..core.runtime import AgentRuntime
 from ..project_paths import resolve_project_root
 from ..tools import call_blender_socket
 from .. import get_effective_blend_path as _get_effective_blend_path
@@ -831,7 +831,7 @@ def _run_chat_turn(
         runtime.model = model
 
         def _on_tool_call(tool_name: str, step: int) -> None:
-            # Prefer the Portuguese status set by runtime_agent_loop (includes round
+            # Prefer the Portuguese status set by core.agent_loop (includes round
             # info); fall back to _STATUS_MESSAGES for callers that bypass the loop.
             status = getattr(runtime, "_current_tool_status", "") or ""
             if not status:

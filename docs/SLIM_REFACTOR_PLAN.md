@@ -103,7 +103,13 @@ blender_addon/
 │   └── api_client.py               ← cliente Anthropic com retry (atual runtime_api_client.py, mantido)
 │
 ├── handler/                        ← NOVO: 1 handler único, sem dispatcher por turn_class
-│   ├── workspace.py                ← handler único: inquiry | diagnose | draft | feedback (~400 linhas)
+│   ├── workspace.py                ← handler único: inquiry | diagnose | draft (~400 linhas)
+│   ├── draft_policy.py             ← política de ferramentas + cobertura semântica do draft
+│   ├── draft_response.py           ← formatação/sanitização de resposta do draft
+│   ├── draft_state.py              ← leitura/sync de draft + modos de retry/escrita
+│   ├── draft_finalize.py           ← inspeção de writes + motivos de não-escrita/regressão
+│   ├── feedback.py                 ← feedback pós-execução: diagnóstico + pending decision
+│   ├── feedback_evidence.py        ← leitura da revisão falha + evidência estática + fallback
 │   └── prompt.py                   ← builder de system prompt (~200 linhas)
 │
 ├── tools/                          ← NOVO: divisão de handlers.py + runtime_dispatch.py
@@ -261,50 +267,66 @@ Lista mínima:
 
 ---
 
-### Fase 3 — Core runtime enxuto
+### Fase 3 — Core runtime enxuto ✅ parcial (2026-05-06)
 
 **O que:** substituir `agent_runtime.py` (1857) + `runtime_agent_loop.py` por `core/`.
 
-- [ ] Criar `blender_addon/core/` package
-- [ ] `core/api_client.py` ← move `runtime_api_client.py` pra cá, sem mudança de comportamento
-- [ ] `core/agent_loop.py` ← loop multi-round Claude API; halt-after-write; truncation guard. Sem comportamento especial de `write_script_draft` no nome — usa hook genérico do handler.
-- [ ] `core/tool_policy.py` ← contrato de draft (fresh structural memory + draft context + target resolved + evidence) + economy_retry (broad reads bloqueados, focal_budget≥3 em REPAIRING)
-- [ ] `core/runtime.py` ← `AgentRuntime` enxuto:
+- [x] Criar `blender_addon/core/` package
+- [x] `core/api_client.py` ← move `runtime_api_client.py` pra cá, sem mudança de comportamento
+- [x] `core/agent_loop.py` ← loop multi-round Claude API; halt-after-write; truncation guard. Sem comportamento especial de `write_script_draft` no nome — usa hook genérico do handler.
+- [x] `core/tool_policy.py` ← contrato de draft (fresh structural memory + draft context + target resolved + evidence) + economy_retry (broad reads bloqueados, focal_budget≥3 em REPAIRING)
+- [x] `core/runtime.py` ← `AgentRuntime` enxuto:
   - `run_turn(message)`: load → resolve pending decision → simple intent → handler.handle → save
   - sem dispatcher por turn_class; sem `_workspace_goal_mode` regex; sem `_sync_v1_to_legacy`
   - intent inference resolvida com 4 regras simples (`pending_user_decision.match()` > prefixo `[RESULTADO DE EXECUÇÃO]` > imperativo de escrita explícito > default inquiry)
 
 **Critério de saída:**
-- [ ] `blender_addon/agent_runtime.py` deletado
-- [ ] `blender_addon/runtime_agent_loop.py` deletado
-- [ ] Smoke test: pergunta factual retorna resposta com tree render injetado
-- [ ] Smoke test: pedido de draft escreve no Text Editor e turno encerra após 1 escrita
+- [x] `blender_addon/agent_runtime.py` deletado
+- [x] `blender_addon/runtime_agent_loop.py` deletado
+- [x] Smoke test: pergunta factual retorna resposta com tree render injetado (validado em sessão real `run-20260506T200924Z-5298c87e`/chat)
+- [x] Smoke test: pedido de draft escreve no Text Editor e turno encerra após 1 escrita (validado em sessão real `run-20260506T201023Z-524f1e68`, revisão 38)
+- [x] Correção pós-smoke: prefixo `[RESULTADO DE EXECUÇÃO — ...]` e verbo `escrever` agora roteiam para `feedback_fix`/`draft_workspace`
+- [x] Verificação local: `python -m compileall blender_addon`
+- [x] Verificação local: `python -m unittest discover tests` → 218 tests, 2 falhas pré-existentes
 
 ---
 
-### Fase 4 — Handler único + Wave 5.C absorvida
+### Fase 4 — Handler único + Wave 5.C absorvida ✅ parcial (2026-05-06)
 
 **O que:** substituir `runtime/handlers/drafting.py` (2595) + `workspace.py` + `__init__.py` por handler único.
 
-- [ ] Criar `blender_addon/handler/` package
-- [ ] `handler/prompt.py` ← system prompt builder único, com modos: `inquiry`, `diagnose`, `draft`, `feedback`. Sem contrato Sintoma/Hipótese/... obrigatório.
-- [ ] `handler/workspace.py` ← `handle(goal_mode, ctx)` único:
+- [x] Criar `blender_addon/handler/` package
+- [x] `handler/prompt.py` ← system prompt builder único, com modos: `inquiry`, `diagnose`, `draft`, `feedback`. Sem contrato Sintoma/Hipótese/... obrigatório.
+- [x] `handler/workspace.py` ← `handle(goal_mode, ctx)` único:
   - escolhe ferramentas permitidas pelo goal_mode
   - monta system prompt via `prompt.py`
   - chama `core.agent_loop`
   - finaliza turno
-- [ ] **Wave 5.C absorvida:**
+- [x] `handler/feedback.py` ← fluxo pós-falha separado: registra feedback, diagnostica revisão falha, emite `PendingUserDecision`, não escreve novo draft
+- [x] `runtime/handlers/` removido do caminho vivo; imports migrados para `handler`
+- [x] Testes de dispatcher legado reescritos para a superfície `handler.workspace.handle`
+- [x] Primeiro corte de `_drafting_support.py`: superfície pública de feedback saiu para `handler/feedback.py`
+- [x] Segundo corte de `_drafting_support.py`: leitura da revisão falha, evidência estática, quality gate e fallback saíram para `handler/feedback_evidence.py`
+- [x] Terceiro corte de `_drafting_support.py`: política de ferramentas, cobertura semântica e fallback de `goal_guidance` saíram para `handler/draft_policy.py`
+- [x] Quarto corte de `_drafting_support.py`: sanitização de chat, resumo de draft e guards de resposta saíram para `handler/draft_response.py`
+- [x] Quinto corte de `_drafting_support.py`: leitura/sync de draft e detectores de modo saíram para `handler/draft_state.py`
+- [x] Sexto corte de `_drafting_support.py`: inspeção de writes, motivos de não-escrita e retry guidance saíram para `handler/draft_finalize.py`
+- [ ] Reduzir o restante de `_drafting_support.py` para helpers menores de prompt/contexto do draft workspace
+- [x] **Wave 5.C absorvida:**
   - `set_pending_decision()` é o único caminho de emitir pergunta A/B
   - resolução de pending decision feita em `core.runtime.run_turn` antes do handler ser chamado
   - guarda contra colapso `STRATEGY_PROPOSED → REPAIRING` no `session_state_store`
   - sem regex nova em `routing_obs.py`
-- [ ] Pacote de evidência estática (já implementado) consumido pelo prompt em modo `feedback`; instrução é "cite mismatch real se houver", não cabeçalhos exatos.
+- [x] Pacote de evidência estática (já implementado) consumido pelo prompt em modo `feedback`; instrução é "cite mismatch real se houver", não cabeçalhos exatos.
 
 **Critério de saída:**
-- [ ] `blender_addon/runtime/handlers/` deletado inteiro
-- [ ] Tests state-driven de `tests/test_pending_user_decision.py` passam
+- [x] `blender_addon/runtime/handlers/` deletado inteiro
+- [x] Tests state-driven de `tests/test_pending_user_decision.py` passam
+- [x] Feedback de falha fica read-only e bloqueia `write_script_draft` até confirmação explícita
 - [ ] Smoke manual: 3 falhas distintas geram 3 diagnósticos distintos (não verbatim)
 - [ ] Smoke manual: "Caminho B" resolve sem regex
+- [x] Verificação local: `python -m compileall blender_addon`
+- [x] Verificação local: `python -m unittest discover tests` → 201 tests, 2 falhas pré-existentes
 
 ---
 
@@ -322,6 +344,53 @@ Lista mínima:
 - [ ] Os 4 estados visuais ainda funcionam (CONVERSA, PRONTO, EXECUTANDO, RESULTADO)
 - [ ] Snapshot + revert ainda funcionam
 - [ ] Reabrir `.blend` rehidrata o painel
+
+---
+
+## Handoff — fim do dia 2026-05-06
+
+Estado atual:
+- Fase 3 funcionalmente validada: `core/` criado, runtime slim em uso, arquivos legados `agent_runtime.py`, `runtime_agent_loop.py` e `runtime_api_client.py` substituídos.
+- Fase 4 em bom estado arquitetural parcial: `handler/` criado, `workspace.py` é a entrada principal, feedback pós-falha é read-only e separado.
+- `_drafting_support.py` caiu para ~899 linhas e agora atua mais como orquestrador do draft workspace.
+- Módulos extraídos:
+  - `handler/feedback.py`
+  - `handler/feedback_evidence.py`
+  - `handler/draft_policy.py`
+  - `handler/draft_response.py`
+  - `handler/draft_state.py`
+  - `handler/draft_finalize.py`
+
+Validação local feita:
+- [x] `python -m compileall blender_addon`
+- [x] testes focados de feedback/reparo/retry/policy/sanitização/draft mínimo
+- [x] `python -m unittest discover tests` roda 202 testes com 2 falhas conhecidas
+
+Falhas conhecidas antes de seguir:
+1. `test_draft_workspace_diagnose_only_blocks_write_and_returns_analysis`
+   - Espera `"Strategy A"`.
+   - Comportamento atual retorna `"Direcao de reparo"`.
+   - Provavelmente teste desatualizado vs contrato atual de diagnóstico sem A/B fabricado.
+2. `test_runtime_archive_reset_logs_journal_event_and_lifecycle_note`
+   - `journal_file` vem `None`.
+   - Pode ser bug real no journal/archive reset; investigar antes de continuar refactors grandes.
+
+Próximo passo recomendado:
+1. Resolver/decidir essas 2 falhas para deixar suíte verde.
+2. Fazer smoke manual no Blender:
+   - pedir draft;
+   - executar manualmente;
+   - reportar falha;
+   - confirmar que o agente diagnostica e pede confirmação antes de reescrever;
+   - responder caminho/opção;
+   - confirmar que só então escreve nova revisão.
+3. Se ainda fizer sentido, continuar Fase 4 extraindo prompt/contexto de `_drafting_support.py` para `handler/draft_prompt.py`.
+
+Prompt sugerido para começar a próxima sessão:
+
+```text
+Estamos no projeto blend_IA_ort_v2. Continue a partir do handoff em docs/SLIM_REFACTOR_PLAN.md, seção "Handoff — fim do dia 2026-05-06". Antes de codar, leia o git status, leia a seção da Fase 4 e verifique as 2 falhas conhecidas da suíte. Quero primeiro deixar os testes verdes ou decidir explicitamente quais testes atualizar, depois fazemos smoke manual no Blender.
+```
 
 ---
 

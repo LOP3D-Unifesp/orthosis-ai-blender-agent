@@ -25,8 +25,8 @@ def _install_fake_bpy() -> None:
 
 _install_fake_bpy()
 
-from blender_addon.runtime.handlers import TurnContext
-from blender_addon.runtime.handlers.drafting import handle_draft_workspace
+from blender_addon.handler import TurnContext
+from blender_addon.handler._drafting_support import handle_draft_workspace
 from blender_addon.runtime.router import ClassifierMeta, TurnClass, TurnRouter
 from blender_addon.session.schema import Session
 

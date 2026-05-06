@@ -1,8 +1,10 @@
 # CLAUDE.md — blend_IA_ort
 
-> Atualizado em 2026-05-05. Onda 5 validada parcialmente; frente pós-falha com Waves 1–3 implementadas mas com falhas sistêmicas identificadas em sessão real — próximo passo é Wave 5.C (camada mínima de estado conversacional). Wave 4 UI permanece pendente.
-> **Fonte de verdade deste documento:** status operacional atual, regras rápidas do agente de código e próximos passos imediatos. Não duplicar aqui acceptance tests longos nem checklist completo.
-> **Regra de atualização:** quando uma implementação muda, status operacional muda aqui; checklist por onda muda em `docs/refactor_handoff/REFACTOR_PLAN.md`; mudanças conceituais e acceptance tests state-driven mudam em `docs/repair_conversation_loop.md`.
+> ⚠️ **Branch atual: `slim-refactor`** (criada 2026-05-06). Esta branch está executando uma refatoração enxuta que substitui ~10k linhas dos 4 módulos bloated (`drafting.py`, `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`) por ~1.7k linhas, preservando os 17 módulos que funcionam. O plano de execução é `docs/SLIM_REFACTOR_PLAN.md` — siga ele, não o resto deste documento, pra decidir o próximo passo. Este CLAUDE.md descreve o **sistema atual antes do refactor** e fica congelado até a Fase 7 (merge em `master`), quando será reescrito pra refletir a estrutura nova.
+>
+> Atualizado em 2026-05-05 (estado pré-slim). Onda 5 validada parcialmente; frente pós-falha com Waves 1–3 implementadas mas com falhas sistêmicas identificadas em sessão real. Wave 5.C é absorvida pela Fase 4 do slim refactor.
+> **Fonte de verdade deste documento:** status operacional atual e regras rápidas do agente de código. Não duplicar aqui acceptance tests longos nem checklist completo.
+> **Regra de atualização durante o slim refactor:** mudanças de implementação vão pro changelog do commit; o `SLIM_REFACTOR_PLAN.md` é a referência de fases; mudanças conceituais state-driven seguem em `docs/repair_conversation_loop.md`. Este arquivo só é reescrito na Fase 7.
 
 ---
 
@@ -117,7 +119,10 @@ blend_IA_ort/
 │   └── recipes/            ← padrões reutilizáveis
 │
 ├── docs/                   ← documentação de arquitetura
-│   └── refactor_handoff/   ← REFACTOR_PLAN.md (fonte de verdade do refactor)
+│   ├── SLIM_REFACTOR_PLAN.md   ← plano de execução desta branch
+│   ├── repair_conversation_loop.md ← schema PendingUserDecision + acceptance tests
+│   ├── draft_flow_audit.md     ← mapa da pipeline atual com line numbers
+│   └── state_inventory.md      ← catálogo de fontes de estado
 ├── contracts/              ← schemas JSON de referência
 ├── legacy/                 ← histórico de desenvolvimento (não é runtime)
 │
@@ -392,10 +397,10 @@ Após qualquer alteração no addon, enviar esses prompts no painel do Blender:
 - Não recriar `skill_router.py` ou `safety_policy.py` — já existem e são usados
 - Não usar MCP como canal principal — socket direto (porta 65432) é o padrão
 - Não criar Verifier como classe separada
-- Não adicionar regex no router — quando der vontade, é sinal de que falta estado (ver REFACTOR_PLAN.md)
+- Não adicionar regex no router — quando der vontade, é sinal de que falta estado (resolvido por `PendingUserDecision`; ver `docs/repair_conversation_loop.md`)
 - Não adicionar mais regex a `infer_turn_intent()` para reconhecer aprovações de estratégia — a solução é `PendingUserDecision.match(options)` (Wave 5.C), não ampliar listas de palavras
 - Não emitir pergunta de decisão manualmente no texto. Usar `set_pending_decision()`; pergunta A/B sem `PendingUserDecision` é bug arquitetural, não detalhe opcional
-- Não criar dois sistemas de estado em paralelo (ver decisão pendente de migração do `state_machine.py` no REFACTOR_PLAN.md Onda 6)
+- Não criar dois sistemas de estado em paralelo — `state_machine.py` é legado e será deletado na Fase 1 do slim refactor
 - Não chamar `execute_code` ou `make_plan` automaticamente no loop do agente — são user-triggered
 - Não reintroduzir ferramentas GN atômicas (`create_node`, `connect_nodes`, `set_node_value`, etc.)
 - Não exigir formato de seções exatas (Sintoma/Hipótese/Evidência/Confiança/Limitações/Opções/Pergunta) no prompt de diagnóstico pós-falha — o LLM falha sistematicamente e o fallback produz template idêntico para toda falha; a invariante de segurança é comportamental, não tipográfica
@@ -426,8 +431,9 @@ Após qualquer alteração no addon, enviar esses prompts no painel do Blender:
 
 ## Refactor em andamento
 
-Ver `docs/refactor_handoff/REFACTOR_PLAN.md` para o plano completo por ondas.
-Ver `docs/repair_conversation_loop.md` para a frente de reparo conversacional pós-falha — direção arquitetural, falhas sistêmicas identificadas e Wave 5.C.
+**Branch `slim-refactor` (2026-05-06):** o plano de 8 ondas foi substituído por um refactor enxuto de 7 fases. Ver `docs/SLIM_REFACTOR_PLAN.md` — única referência de execução desta branch. Wave 5.C é absorvida pela Fase 4. As Ondas 1–4 já foram entregues e ficam preservadas como módulos `tree_renderer`, `BaselineWorkspace`, `OperationJournal`, `ChatHistoryStore`, `snapshot_manager`. Ondas 5 (parcial), 6 (Working Memory) e 7 (state machine formal) ficam adiadas e podem ser retomadas depois do merge slim.
+
+Ver `docs/repair_conversation_loop.md` para a frente de reparo conversacional pós-falha — direção arquitetural, falhas sistêmicas identificadas e schema de `PendingUserDecision` (consumido pela Fase 4 do slim refactor).
 
 **Estado atual: Ondas 1–3 concluídas ✅ — Onda 4a–4d implementadas ✅ — Onda 4.E validada no Blender/journal ✅ — Onda 5 validada parcialmente 🔶 — Frente pós-falha Waves 1–3 implementadas com falhas sistêmicas conhecidas 🔶 — Wave 5.C (camada de estado conversacional) pendente ⬜ — Wave 4 UI pendente ⬜**
 
@@ -456,7 +462,7 @@ Itens principais:
 4. **4d — Revisão de truncamentos**: implementado em código em 2026-04-29 e coberto pela validação 4.E em 2026-04-30. `_MAX_TOOL_RESULT_CHARS=6000`, `_MAX_READ_RESULT_CHARS=4000`; `build_tree_structural_memory` saiu de `_HEAVY_READ_TOOLS`; `get_scene_summary`/`get_gn_hosts` entraram como heavy reads. Compressão de tool_use preserva contexto dos draft tools e `read_script_draft` duplicado em `draft_workspace` é bloqueado quando o pipeline já carregou o draft.
 5. **4.E — Validação Blender/journal**: concluída em 2026-04-30. Passaram: tree render no system prompt, draft pós-reabertura com contexto de árvore, e falha visível de recuperação estrutural com `reason`. Durante a validação foram corrigidos: roteamento de perguntas factuais em `drafting`, histórico contaminando inquiry, finalização muda em leitura/diagnóstico, retry automático após bloqueio semântico de `write_script_draft`, e flag `Simulate Bridge Failure` persistida no `UIState` V1.
 
-Ver `docs/refactor_handoff/REFACTOR_PLAN.md` para critérios de saída mensuráveis por item.
+Ver `docs/SLIM_REFACTOR_PLAN.md` §6 para critérios de saída mensuráveis por fase.
 
 ### Onda 5 — UX do ciclo de trabalho (em progresso, sessão 9)
 

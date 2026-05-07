@@ -877,14 +877,6 @@ def handle_execute_code(cmd: dict) -> dict:
     return execute_in_main_thread(_do)
 
 
-def handle_undo(cmd: dict) -> dict:
-    def _do():
-        bpy.ops.ed.undo()
-        return {"status": "success"}
-
-    return execute_in_main_thread(_do)
-
-
 def handle_query_node_types(cmd: dict) -> dict:
     """Introspect available Geometry Nodes node types in the running Blender version.
 
@@ -1785,7 +1777,6 @@ HANDLERS = {
     "apply_collections": handle_apply_collections,
     "apply_gn_edits": handle_apply_gn_edits,
     "execute_code": handle_execute_code,
-    "undo": handle_undo,
     "query_node_types": handle_query_node_types,
     "write_script_draft": handle_write_script_draft,
     "read_script_draft": handle_read_script_draft,

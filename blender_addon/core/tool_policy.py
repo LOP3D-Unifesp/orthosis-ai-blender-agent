@@ -9,8 +9,6 @@ BLOCKED_PRODUCT_TOOLS = frozenset({
     "make_plan",
     "execute_code",
     "apply_simulator_payload",
-    "rename_object",
-    "move_to_collection",
 })
 
 DRAFT_BROAD_READ_TOOLS = frozenset({

@@ -209,7 +209,7 @@ def is_pending_plan_status_question(message: str) -> bool:
     return has_plan_state and has_question_shape
 
 MUTATION_TOOLS = {
-    "apply_simulator_payload", "rename_object", "move_to_collection", "execute_code",
+    "apply_simulator_payload", "execute_code",
 }
 BROAD_READ_TOOLS = {"get_scene_summary"}
 FOCAL_READ_TOOLS = {"get_node_context", "get_selected_nodes_context", "get_active_frame_context", "get_local_subgraph_context", "get_changes_since_last_turn"}

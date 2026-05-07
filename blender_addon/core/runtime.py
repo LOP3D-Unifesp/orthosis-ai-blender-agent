@@ -1740,7 +1740,6 @@ class AgentRuntime:
         node_name = self._extract_node_name(tool_input)
         session_memory_target_tree = str(self._session_memory.get("target_tree", "") or "").strip()
         tree_scoped_tools = {
-            "get_tree_focus",
             "get_tree_parameters",
             "build_tree_structural_memory",
             "classify_tree_phases",

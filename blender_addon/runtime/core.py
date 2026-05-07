@@ -1634,30 +1634,6 @@ class Runtime:
             session_state=state,
         )
         status = raw.get("status", "success")
-
-        # Onda 5 (Item 5.3): specific journal events for snapshot operations.
-        if status == "success":
-            if canonical_tool == "take_blend_snapshot":
-                try:
-                    self.journal.log_runtime_event(
-                        event_type="blend_snapshot_taken",
-                        payload={
-                            "session_id": raw.get("session_id", ""),
-                            "revision": raw.get("revision", 0),
-                            "snapshot_path": raw.get("snapshot_path", ""),
-                            "size_bytes": raw.get("size_bytes", 0),
-                        },
-                    )
-                except Exception:
-                    pass
-            elif canonical_tool == "restore_blend_snapshot":
-                try:
-                    self.journal.log_runtime_event(
-                        event_type="blend_snapshot_restored",
-                        payload={"snapshot_path": raw.get("snapshot_path", "")},
-                    )
-                except Exception:
-                    pass
         self.journal.log_runtime_event(
             event_type="tool_execution",
             payload={

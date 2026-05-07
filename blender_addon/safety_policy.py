@@ -15,7 +15,6 @@ AUTO_APPLY_TOOLS = {
     "make_plan",
     "get_scene_summary",
     "get_gn_hosts",
-    "get_tree_focus",
     "get_tree_parameters",
     "resolve_gn_workspace",
     "build_tree_structural_memory",
@@ -31,13 +30,10 @@ AUTO_APPLY_TOOLS = {
     "analyze_gn_state",
     "capture_screenshot",
     "query_node_types",
-    "undo",
 }
 
 
 CONFIRM_THEN_APPLY_TOOLS = {
-    "rename_object",
-    "move_to_collection",
     "apply_simulator_payload",
     "execute_code",  # default level; risky patterns escalate to explicit_override
 }

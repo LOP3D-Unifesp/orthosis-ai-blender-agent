@@ -485,7 +485,6 @@ class RuntimeDispatcher:
     _TOOL_HANDLERS: dict[str, str] = {
         "get_scene_summary":           "_tool_get_scene_summary",
         "get_gn_hosts":                "_tool_get_gn_hosts",
-        "get_tree_focus":              "_tool_get_tree_focus",
         "get_tree_parameters":         "_tool_get_tree_parameters",
         "prepare_draft_context":       "_tool_prepare_draft_context",
         "resolve_gn_workspace":        "_tool_resolve_gn_workspace",
@@ -502,18 +501,11 @@ class RuntimeDispatcher:
         "analyze_gn_state":            "_tool_analyze_gn_state",
         "list_tree_nodes":             "_tool_list_tree_nodes",
         "find_tree_nodes":             "_tool_find_tree_nodes",
-        "rename_object":               "_tool_rename_object",
-        "move_to_collection":          "_tool_move_to_collection",
         "capture_screenshot":          "_tool_capture_screenshot",
-        "undo":                        "_tool_undo",
         "execute_code":                "_tool_execute_code",
         "query_node_types":            "_tool_query_node_types",
         "write_script_draft":          "_tool_write_script_draft",
         "read_script_draft":           "_tool_read_script_draft",
-        # Onda 5 (Item 5.3): snapshot tools — UI-only, never called by agent
-        "take_blend_snapshot":         "_tool_take_blend_snapshot",
-        "restore_blend_snapshot":      "_tool_restore_blend_snapshot",
-        "list_blend_snapshots":        "_tool_list_blend_snapshots",
     }
 
     def __init__(self):
@@ -553,9 +545,6 @@ class RuntimeDispatcher:
 
     def _tool_get_gn_hosts(self, tool_input, **_):
         return self._get_gn_hosts()
-
-    def _tool_get_tree_focus(self, tool_input, **_):
-        return self._get_tree_focus(tool_input)
 
     def _tool_get_tree_parameters(self, tool_input, **_):
         tree_name = tool_input.get("tree_name")
@@ -610,28 +599,8 @@ class RuntimeDispatcher:
     def _tool_analyze_gn_state(self, tool_input, *, output_mode="compact", **_):
         return self._analyze_gn_state(tool_input, output_mode=output_mode)
 
-    def _tool_rename_object(self, tool_input, **_):
-        return handlers.handle_apply_renames(
-            {"renames": [{"from": tool_input["old_name"], "to": tool_input["new_name"]}]}
-        )
-
-    def _tool_move_to_collection(self, tool_input, **_):
-        return handlers.handle_apply_collections(
-            {
-                "moves": [
-                    {
-                        "object": tool_input["object_name"],
-                        "collection": tool_input["collection_name"],
-                    }
-                ]
-            }
-        )
-
     def _tool_capture_screenshot(self, tool_input, **_):
         return self._capture_screenshot(tool_input)
-
-    def _tool_undo(self, tool_input, **_):
-        return handlers.handle_undo({})
 
     def _tool_execute_code(self, tool_input, **_):
         code = tool_input.get("code", "")
@@ -661,83 +630,6 @@ class RuntimeDispatcher:
 
     def _tool_read_script_draft(self, tool_input, **_):
         return handlers.handle_read_script_draft(tool_input)
-
-    # ------------------------------------------------------------------
-    # Onda 5 (Item 5.3): snapshot tools
-    # These are called by UI operators, never by the agent loop.
-    # Journal events (blend_snapshot_taken / blend_snapshot_restored) are
-    # logged in runtime/core.py after execute_tool_call() returns.
-    # ------------------------------------------------------------------
-
-    def _tool_take_blend_snapshot(self, tool_input, **_):
-        from .snapshot_manager import take_snapshot
-        from .project_paths import resolve_project_root
-
-        blend_path = str(tool_input.get("blend_path") or "")
-        session_id = str(tool_input.get("session_id") or "")
-        revision = int(tool_input.get("revision") or 0)
-        if not session_id:
-            return _json_error("Missing required input: session_id")
-
-        try:
-            project_root = resolve_project_root()
-            snap_path = take_snapshot(
-                blend_path=blend_path,
-                session_id=session_id,
-                revision=revision,
-                project_root=project_root,
-            )
-            import os
-            size_bytes = os.path.getsize(snap_path)
-            return {
-                "status": "success",
-                "snapshot_path": snap_path,
-                "session_id": session_id,
-                "revision": revision,
-                "size_bytes": size_bytes,
-            }
-        except Exception as exc:
-            return _json_error(f"take_blend_snapshot failed: {exc}")
-
-    def _tool_restore_blend_snapshot(self, tool_input, **_):
-        from .snapshot_manager import restore_snapshot
-
-        snapshot_path = str(tool_input.get("snapshot_path") or "")
-        target_path = str(tool_input.get("target_path") or "")
-        if not snapshot_path:
-            return _json_error("Missing required input: snapshot_path")
-        if not target_path:
-            return _json_error("Missing required input: target_path")
-
-        import os
-        if not os.path.isfile(snapshot_path):
-            return _json_error(f"Snapshot not found: {snapshot_path}")
-
-        try:
-            restore_snapshot(snapshot_path, target_path)
-            return {
-                "status": "success",
-                "snapshot_path": snapshot_path,
-                "target_path": target_path,
-                "reopening": True,
-            }
-        except Exception as exc:
-            return _json_error(f"restore_blend_snapshot failed: {exc}")
-
-    def _tool_list_blend_snapshots(self, tool_input, **_):
-        from .snapshot_manager import list_snapshots
-        from .project_paths import resolve_project_root
-
-        session_id = str(tool_input.get("session_id") or "")
-        if not session_id:
-            return _json_error("Missing required input: session_id")
-
-        try:
-            project_root = resolve_project_root()
-            entries = list_snapshots(session_id=session_id, project_root=project_root)
-            return {"status": "success", "snapshots": entries, "count": len(entries)}
-        except Exception as exc:
-            return _json_error(f"list_blend_snapshots failed: {exc}")
 
     def _invalidate_tree_cache(self, tree_name: str) -> None:
         if tree_name:
@@ -833,113 +725,6 @@ class RuntimeDispatcher:
             f"Tree '{tree_name}' not found",
             available_trees=[group.get("name") for group in snap.get("node_groups", [])],
         )
-
-    def _get_tree_focus(self, tool_input: dict[str, Any]) -> dict[str, Any]:
-        tree_name = tool_input.get("tree_name")
-        if not tree_name:
-            return _json_error("Missing required input: tree_name")
-        scope_mode = str(tool_input.get("scope_mode", "")).strip().lower()
-        if scope_mode not in {"by_nodes", "neighborhood"}:
-            return _json_error("Invalid scope_mode. Use 'by_nodes' or 'neighborhood'.")
-
-        max_nodes_raw = tool_input.get("max_nodes", 80)
-        if not isinstance(max_nodes_raw, int) or max_nodes_raw <= 0:
-            return _json_error("Invalid max_nodes. Expected positive integer.")
-        max_nodes = min(max_nodes_raw, 2000)
-
-        tree = self._get_tree_structure(tree_name)
-        if tree.get("status") != "success":
-            return tree
-        payload = tree.get("result", {})
-        nodes = payload.get("nodes", [])
-        links = payload.get("links", [])
-        node_by_name = {node.get("name"): node for node in nodes if node.get("name")}
-
-        selected: set[str] = set()
-        missing_nodes: list[str] = []
-        if scope_mode == "by_nodes":
-            node_names = tool_input.get("node_names")
-            if not isinstance(node_names, list) or not node_names:
-                return _json_error("scope_mode='by_nodes' requires non-empty node_names list.")
-            for node_name in node_names:
-                if not isinstance(node_name, str):
-                    continue
-                name = node_name.strip()
-                if not name:
-                    continue
-                if name in node_by_name:
-                    selected.add(name)
-                else:
-                    missing_nodes.append(name)
-            if not selected:
-                return _json_error("No requested node_names were found in tree.", missing_nodes=missing_nodes)
-        else:
-            center_node = str(tool_input.get("center_node", "")).strip()
-            if not center_node:
-                return _json_error("scope_mode='neighborhood' requires center_node.")
-            if center_node not in node_by_name:
-                return _json_error(f"center_node '{center_node}' not found in tree '{tree_name}'.")
-
-            hops_raw = tool_input.get("hops", 1)
-            if not isinstance(hops_raw, int) or hops_raw not in {1, 2}:
-                return _json_error("Invalid hops. Supported values: 1 or 2.")
-            direction = str(tool_input.get("direction", "both")).strip().lower()
-            if direction not in {"both", "upstream", "downstream"}:
-                return _json_error("Invalid direction. Use 'both', 'upstream', or 'downstream'.")
-
-            upstream: dict[str, set[str]] = {name: set() for name in node_by_name}
-            downstream: dict[str, set[str]] = {name: set() for name in node_by_name}
-            for link in links:
-                src = link.get("from_node")
-                dst = link.get("to_node")
-                if src in node_by_name and dst in node_by_name:
-                    downstream[src].add(dst)
-                    upstream[dst].add(src)
-
-            selected = {center_node}
-            frontier = {center_node}
-            for _ in range(hops_raw):
-                next_frontier: set[str] = set()
-                for current in frontier:
-                    if direction in {"both", "upstream"}:
-                        next_frontier.update(upstream.get(current, set()))
-                    if direction in {"both", "downstream"}:
-                        next_frontier.update(downstream.get(current, set()))
-                next_frontier -= selected
-                if not next_frontier:
-                    break
-                selected.update(next_frontier)
-                frontier = next_frontier
-
-        ordered_names = [node.get("name") for node in nodes if node.get("name") in selected][:max_nodes]
-        selected_set = set(ordered_names)
-        focused_nodes = []
-        for node in nodes:
-            if node.get("name") not in selected_set:
-                continue
-            out = dict(node)
-            if not tool_input.get("include_values", True):
-                out.pop("values", None)
-                out.pop("input_values", None)
-            if not tool_input.get("include_properties", True):
-                out.pop("properties", None)
-            focused_nodes.append(out)
-        focused_links = [dict(link) for link in links if link.get("from_node") in selected_set and link.get("to_node") in selected_set]
-        return {
-            "status": "success",
-            "result": {
-                "name": tree_name,
-                "scope_mode": scope_mode,
-                "nodes": focused_nodes,
-                "links": focused_links,
-                "missing_nodes": missing_nodes,
-                "summary": {
-                    "node_count": len(focused_nodes),
-                    "link_count": len(focused_links),
-                    "requested_max_nodes": max_nodes,
-                },
-            },
-        }
 
     def _get_tree_parameters(self, tree_name: str) -> dict[str, Any]:
         scene = self._capture_scene()

@@ -49,9 +49,7 @@ _BROAD_READ_TOOLS = frozenset({
     "build_tree_structural_memory",
     "classify_tree_phases",
     "map_clinical_parameter_roles",
-    "interpret_orthosis_tree_logic",
     "analyze_scene",
-    "analyze_gn_state",
 })
 
 _FOCAL_READ_TOOLS = frozenset({
@@ -936,40 +934,24 @@ class OperationJournal:
         status: str = "success",
         error: str | None = None,
     ) -> None:
-        """Log one GN mutation operation or a batch from build_gn_graph."""
+        """Log one GN mutation operation."""
         if not self.is_mutation(tool_name):
             return
 
         goal_id = self._current_goal_id or "untracked"
 
-        if tool_name == "build_gn_graph" and operations:
-            # Log each sub-operation individually for granularity
-            for op_entry in operations:
-                self._goal_op_count += 1
-                self._goal_structured_op_count += 1
-                self._append({
-                    "type": "operation",
-                    "goal_id": goal_id,
-                    "timestamp": _utc_now_iso(),
-                    "tree_name": tree_name,
-                    "op": op_entry.get("op", tool_name),
-                    "params": op_entry.get("params", {}),
-                    "status": status,
-                    "error": error,
-                })
-        else:
-            self._goal_op_count += 1
-            self._goal_structured_op_count += 1
-            self._append({
-                "type": "operation",
-                "goal_id": goal_id,
-                "timestamp": _utc_now_iso(),
-                "tree_name": tree_name,
-                "op": tool_name,
-                "params": params or {},
-                "status": status,
-                "error": error,
-            })
+        self._goal_op_count += 1
+        self._goal_structured_op_count += 1
+        self._append({
+            "type": "operation",
+            "goal_id": goal_id,
+            "timestamp": _utc_now_iso(),
+            "tree_name": tree_name,
+            "op": tool_name,
+            "params": params or {},
+            "status": status,
+            "error": error,
+        })
 
     def log_code_execution(
         self,

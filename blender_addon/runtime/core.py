@@ -460,26 +460,6 @@ class Runtime:
             return
 
         result = raw.get("result", {}) if isinstance(raw.get("result"), dict) else {}
-        if canonical_tool in {"analyze_gn_state"} and result:
-            focus_tree = str(result.get("name", "") or _extract_tree_name(tool_input or {})).strip()
-            if focus_tree:
-                session.update_focus(
-                    blend_path=session.focus.blend_path,
-                    object_name=session.focus.object_name,
-                    modifier_name=session.focus.modifier_name,
-                    tree_name=focus_tree,
-                )
-            subgraph_index = session.operational_state.structural_index
-            builder = BaselineBuilder(session.baseline_workspace)
-            builder.rebuild_from_summary(
-                result,
-                built_from="auto",
-                subgraph_index=subgraph_index if isinstance(subgraph_index, dict) else None,
-                known_parameters=_known_parameters_from_state(legacy_state),
-                open_questions=_open_questions_from_state(legacy_state),
-            )
-            return
-
         if canonical_tool == "get_changes_since_last_turn":
             if int(result.get("changes_count", 0) or 0) > 0:
                 session.mark_baseline_stale()
@@ -1418,7 +1398,6 @@ class Runtime:
         if canonical_tool in {
             "classify_tree_phases",
             "map_clinical_parameter_roles",
-            "interpret_orthosis_tree_logic",
         } and isinstance(result, dict):
             semantic_tree = str(result.get("tree_name") or tree_name or state.get("last_target_tree") or "").strip()
             if semantic_tree:
@@ -1667,8 +1646,6 @@ class Runtime:
             )
         if canonical_tool in {"get_scene_summary", "analyze_scene"}:
             state_ops.update_scene_summary(state, raw.get("result", {}))
-        if canonical_tool in {"analyze_gn_state", "build_gn_graph"}:
-            state_ops.update_gn_summary(state, raw.get("result", {}))
         self._update_state_after_tool(
             state=state,
             canonical_tool=canonical_tool,

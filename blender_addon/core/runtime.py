@@ -1744,7 +1744,6 @@ class AgentRuntime:
             "build_tree_structural_memory",
             "classify_tree_phases",
             "map_clinical_parameter_roles",
-            "interpret_orthosis_tree_logic",
             "get_node_context",
             "get_selected_nodes_context",
             "get_active_frame_context",
@@ -1885,7 +1884,6 @@ class AgentRuntime:
         if tool_name in {
             "classify_tree_phases",
             "map_clinical_parameter_roles",
-            "interpret_orthosis_tree_logic",
         }:
             semantic_tree = str(result.get("tree_name") or tree_name).strip()
             if semantic_tree:

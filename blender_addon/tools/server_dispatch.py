@@ -1876,7 +1876,7 @@ class RuntimeDispatcher:
                     "probable_function": self._region_function(name, children or [frame]),
                     "local_phase": phase,
                     "local_phase_confidence": phase_conf,
-                    "key_nodes": [self._norm_text(n.get("name")) for n in children[:12] if self._norm_text(n.get("name"))],
+                    "key_nodes": [self._norm_text(n.get("name")) for n in children if self._norm_text(n.get("name"))],
                     "relation_to_other_regions": "groups_child_nodes_by_parent_frame",
                 }
             )

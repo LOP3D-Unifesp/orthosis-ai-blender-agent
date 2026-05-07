@@ -111,7 +111,12 @@ def _handle_inquiry(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     system = build_system_prompt(ctx.session, config.name, knowledge=knowledge)
     if discovery_brief:
         system += "\n\n" + discovery_brief
-    tree_render = _maybe_tree_render_for_factual_inquiry(ctx)
+
+    # Always inject the full tree render when structural memory is available.
+    # Narrow factual questions and post-failure inquiry both benefit: the agent
+    # sees all node names, frame membership and every link in one shot instead
+    # of reconstructing the graph via repeated focal reads.
+    tree_render = _full_tree_render_for_inquiry(ctx) or _maybe_tree_render_for_factual_inquiry(ctx)
     if tree_render:
         system += tree_render
 
@@ -124,6 +129,46 @@ def _handle_inquiry(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
         max_rounds=effective_max_rounds,
     )
     return HandlerResult(response_text=text)
+
+
+def _full_tree_render_for_inquiry(ctx: TurnContext) -> str:
+    """Inject the complete tree render into every inquiry system prompt.
+
+    Returns an empty string when structural memory is unavailable so the caller
+    falls back to the narrower factual-inquiry render.  The render now includes
+    all nodes per frame and up to 200 links, giving the agent a complete wiring
+    picture without needing focal reads.
+    """
+    runtime = ctx._runtime
+    state = getattr(runtime, "_session_state", {}) or {}
+    memory_store = state.get("tree_structural_memory") if isinstance(state, dict) else {}
+    if not isinstance(memory_store, dict) or not memory_store:
+        op_state = getattr(getattr(ctx, "session", None), "operational_state", None)
+        candidate = getattr(op_state, "tree_structural_memory", {}) if op_state is not None else {}
+        memory_store = candidate if isinstance(candidate, dict) else {}
+
+    if not memory_store:
+        return ""
+
+    # Pick the first (typically only) non-stale tree entry.
+    memory: dict = {}
+    for entry in memory_store.values():
+        if isinstance(entry, dict) and not entry.get("stale") and int(entry.get("node_count", 0) or 0) >= 1:
+            memory = entry
+            break
+
+    if not memory:
+        return ""
+
+    block = _tree_render_block(memory)
+    if block:
+        ctx.log_event("tree_prompt_render_injected", {
+            "turn_class": "context_inquiry",
+            "source": "full_tree_render_for_inquiry",
+            "node_count": int(memory.get("node_count", 0) or 0),
+            "render_chars": len(block),
+        })
+    return block
 
 
 def _inquiry_max_rounds_for_state(ctx: TurnContext, config: GoalConfig) -> int:

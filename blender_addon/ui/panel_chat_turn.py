@@ -31,8 +31,6 @@ _STATUS_MESSAGES = {
     "prepare_draft_context": "Preparando contexto de draft...",
     "classify_tree_phases": "Classificando fases da árvore...",
     "map_clinical_parameter_roles": "Mapeando parâmetros clínicos...",
-    "interpret_orthosis_tree_logic": "Interpretando lógica da órtese...",
-    "analyze_gn_state": "Analisando estado GN...",
     "analyze_scene": "Analisando cena...",
     "capture_screenshot": "Capturando viewport...",
     "query_node_types": "Consultando tipos de nó...",

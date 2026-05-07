@@ -184,21 +184,6 @@ TOOLS = [
         },
     },
     {
-        "name": "interpret_orthosis_tree_logic",
-        "description": (
-            "Produce a structured functional interpretation of the orthosis GN tree "
-            "from structural memory, phase classification, and clinical parameter roles."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "tree_name": {"type": "string"},
-                "user_message": {"type": "string"},
-                "force_refresh": {"type": "boolean", "default": False},
-            },
-        },
-    },
-    {
         "name": "analyze_scene",
         "description": "Run scene_context_inspector (compact diagnostic summary).",
         "input_schema": {

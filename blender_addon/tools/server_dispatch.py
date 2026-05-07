@@ -364,39 +364,6 @@ class SkillRouter:
             compact["debug"] = {"full_report": report}
         return compact
 
-    def analyze_gn_state(
-        self,
-        *,
-        scene_snapshot: dict,
-        node_trees_snapshot: dict | None = None,
-        tree_name: str | None = None,
-        current_goal: str | None = None,
-        query: str | None = None,
-        output_mode: str | None = "compact",
-    ) -> dict[str, Any]:
-        build_gn_report, _ = _import_skill_functions()
-        mode = self._normalize_output_mode(output_mode)
-        report = build_gn_report(
-            scene_snapshot=scene_snapshot,
-            node_trees_snapshot=node_trees_snapshot,
-            current_goal=current_goal,
-            query=query or "inspect_deep_structure",
-        )
-
-        if tree_name:
-            tree_names = {tree_name}
-            report["node_trees"] = [t for t in report.get("node_trees", []) if t.get("group_name") in tree_names]
-            report["node_inventory"] = [n for n in report.get("node_inventory", []) if n.get("group_name") in tree_names]
-            report["link_inventory"] = [l for l in report.get("link_inventory", []) if l.get("group_name") in tree_names]
-            report["group_interfaces"] = [g for g in report.get("group_interfaces", []) if g.get("group_name") in tree_names]
-
-        if mode == "verbose":
-            return report
-        compact = self._compact_gn_report(report)
-        if mode == "debug":
-            compact["debug"] = {"full_report": report}
-        return compact
-
     def _compact_scene_report(self, report: dict[str, Any]) -> dict[str, Any]:
         relevant = report.get("relevant_objects", [])[:8]
         gn_report = report.get("gn_report", {})
@@ -491,14 +458,12 @@ class RuntimeDispatcher:
         "build_tree_structural_memory": "_tool_build_tree_structural_memory",
         "classify_tree_phases":        "_tool_classify_tree_phases",
         "map_clinical_parameter_roles": "_tool_map_clinical_parameter_roles",
-        "interpret_orthosis_tree_logic": "_tool_interpret_orthosis_tree_logic",
         "get_node_context":            "_tool_get_node_context",
         "get_selected_nodes_context":  "_tool_get_selected_nodes_context",
         "get_active_frame_context":    "_tool_get_active_frame_context",
         "get_local_subgraph_context":  "_tool_get_local_subgraph_context",
         "get_changes_since_last_turn": "_tool_get_changes_since_last_turn",
         "analyze_scene":               "_tool_analyze_scene",
-        "analyze_gn_state":            "_tool_analyze_gn_state",
         "list_tree_nodes":             "_tool_list_tree_nodes",
         "find_tree_nodes":             "_tool_find_tree_nodes",
         "capture_screenshot":          "_tool_capture_screenshot",
@@ -567,9 +532,6 @@ class RuntimeDispatcher:
     def _tool_map_clinical_parameter_roles(self, tool_input, *, session_state=None, **_):
         return self._map_clinical_parameter_roles(tool_input, session_state=session_state)
 
-    def _tool_interpret_orthosis_tree_logic(self, tool_input, *, session_state=None, **_):
-        return self._interpret_orthosis_tree_logic(tool_input, session_state=session_state)
-
     def _tool_get_node_context(self, tool_input, **_):
         if not tool_input.get("tree_name"):
             return _json_error("Missing required input: tree_name")
@@ -595,9 +557,6 @@ class RuntimeDispatcher:
 
     def _tool_analyze_scene(self, tool_input, *, output_mode="compact", **_):
         return self._analyze_scene(tool_input, output_mode=output_mode)
-
-    def _tool_analyze_gn_state(self, tool_input, *, output_mode="compact", **_):
-        return self._analyze_gn_state(tool_input, output_mode=output_mode)
 
     def _tool_capture_screenshot(self, tool_input, **_):
         return self._capture_screenshot(tool_input)
@@ -1101,10 +1060,7 @@ class RuntimeDispatcher:
         if clinical_raw.get("status") != "success":
             warnings.append(str(clinical_raw.get("error") or "Clinical parameter role mapping unavailable."))
 
-        interpretation_raw = self._interpret_orthosis_tree_logic(contextual_input, session_state=session_state)
-        interpretation = interpretation_raw.get("result", {}) if interpretation_raw.get("status") == "success" and isinstance(interpretation_raw.get("result"), dict) else {}
-        if interpretation_raw.get("status") != "success":
-            warnings.append(str(interpretation_raw.get("error") or "Orthosis workflow interpretation unavailable."))
+        interpretation: dict[str, Any] = {}
 
         blockers: list[str] = []
         if not memory:
@@ -1198,7 +1154,7 @@ class RuntimeDispatcher:
             "resolved_target_tree": bool(tree_name),
             "structural_memory_available": bool(memory),
             "parameter_context_available": params_raw.get("status") == "success",
-            "workflow_interpretation_available": interpretation_raw.get("status") == "success",
+            "workflow_interpretation_available": False,
             "can_write_safely": not blockers and goal_mode != "diagnose_only",
             "recommended_next_step": recommended_next_step,
             "blockers": blockers,
@@ -2146,137 +2102,6 @@ class RuntimeDispatcher:
                 best_hits = hits
         return best, best_hits
 
-    def _interpret_orthosis_tree_logic(
-        self,
-        tool_input: dict[str, Any],
-        *,
-        session_state: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        memory, memory_meta, warnings = self._load_tree_structural_memory(tool_input, session_state=session_state)
-        if not memory:
-            return _json_error("Structural memory unavailable for orthosis interpretation.", warnings=warnings)
-        phase_raw = self._classify_tree_phases(tool_input, session_state=session_state)
-        params_raw = self._map_clinical_parameter_roles(tool_input, session_state=session_state)
-        phase = phase_raw.get("result", {}) if phase_raw.get("status") == "success" and isinstance(phase_raw.get("result"), dict) else {}
-        params = params_raw.get("result", {}) if params_raw.get("status") == "success" and isinstance(params_raw.get("result"), dict) else {}
-        regions = memory.get("major_regions", []) if isinstance(memory.get("major_regions"), list) else []
-        local_phase = phase.get("local_phase_map", []) if isinstance(phase.get("local_phase_map"), list) else []
-
-        anatomy_regions = []
-        for region in regions:
-            if not isinstance(region, dict):
-                continue
-            kind, hits = self._anatomy_region_kind(region)
-            if kind != "unknown":
-                anatomy_regions.append(
-                    {
-                        "anatomy": kind,
-                        "region": region.get("name", ""),
-                        "region_type": region.get("type", ""),
-                        "evidence": hits,
-                        "probable_function": region.get("probable_function", ""),
-                    }
-                )
-        curve_regions = [
-            r for r in local_phase
-            if r.get("phase") == "phase_2" or "curve" in str(r.get("probable_function", "")).lower()
-        ]
-        orthosis_regions = [
-            r for r in local_phase
-            if r.get("phase") == "phase_3" or "orthosis" in str(r.get("probable_function", "")).lower()
-        ]
-        biomodel_regions = [r for r in local_phase if r.get("phase") == "phase_1"]
-        organization = memory.get("organization_assessment", {}) if isinstance(memory.get("organization_assessment"), dict) else {}
-        hotspots = memory.get("structural_hotspots", []) if isinstance(memory.get("structural_hotspots"), list) else []
-        unresolved = phase.get("unresolved_regions", []) if isinstance(phase.get("unresolved_regions"), list) else []
-
-        observations = [
-            {
-                "type": "organization_level",
-                "level": organization.get("level", "unknown"),
-                "signals": organization.get("signals", {}),
-            }
-        ]
-        for hotspot in hotspots:
-            if isinstance(hotspot, dict):
-                observations.append({"type": "structural_hotspot", **hotspot})
-        suggested_focus = []
-        for item in unresolved[:6]:
-            suggested_focus.append(
-                {
-                    "region": item.get("name", ""),
-                    "reason": "semantic_role_unclear_low_confidence",
-                }
-            )
-        for item in curve_regions[:4]:
-            suggested_focus.append(
-                {
-                    "region": item.get("name", ""),
-                    "reason": "curve_logic_region_relevant_for_phase_2_work",
-                }
-            )
-
-        next_targets = []
-        if not curve_regions:
-            next_targets.append("Identify or create clear path/profile curve regions anchored to the biomodel.")
-        if not orthosis_regions:
-            next_targets.append("Keep Phase 3 tentative; no strong orthosis-shell/thickness/hole region is evident yet.")
-        if organization.get("level") in {"confusing", "low_modularity"}:
-            next_targets.append("Consider future node groups around dense anatomical or curve regions; do not refactor automatically.")
-
-        tree_phase = str(phase.get("tree_phase") or memory.get("phase_dominant") or "unknown")
-        functional_summary = (
-            f"Tree '{memory.get('tree_name', '')}' appears centered on {tree_phase}. "
-            f"Detected {len(biomodel_regions)} biomodel/anatomy regions, "
-            f"{len(curve_regions)} curve/path regions, and {len(orthosis_regions)} tentative orthosis-formation regions."
-        )
-        result = {
-            "tree_name": memory.get("tree_name", ""),
-            "functional_summary": functional_summary,
-            "anatomy_regions": anatomy_regions,
-            "workflow_stage_summary": {
-                "dominant_phase": tree_phase,
-                "confidence": phase.get("confidence", {}),
-                "biomodel_region_count": len(biomodel_regions),
-                "curve_region_count": len(curve_regions),
-                "orthosis_region_count": len(orthosis_regions),
-                "phase_3_note": "Phase 3 remains conservative and low-confidence unless shell/thickness/hole/final-geometry signals are present.",
-            },
-            "region_interpretations": [
-                {
-                    "name": r.get("name", ""),
-                    "type": r.get("type", ""),
-                    "phase": r.get("phase", ""),
-                    "confidence": r.get("confidence", 0),
-                    "probable_function": r.get("probable_function", ""),
-                }
-                for r in local_phase
-            ],
-            "clinical_parameter_roles": {
-                "measurement_count": params.get("summary", {}).get("measurement_count", 0)
-                if isinstance(params.get("summary"), dict)
-                else 0,
-                "positioning_count": params.get("summary", {}).get("positioning_count", 0)
-                if isinstance(params.get("summary"), dict)
-                else 0,
-                "uncertain_count": params.get("summary", {}).get("uncertain_count", 0)
-                if isinstance(params.get("summary"), dict)
-                else 0,
-                "likely_affected_regions": params.get("likely_affected_regions", []),
-            },
-            "organization_observations": observations,
-            "suggested_focus_regions": suggested_focus[:10],
-            "next_structural_targets": next_targets,
-            "memory": {
-                "source": memory_meta.get("source", ""),
-                "reused": bool(memory_meta.get("reused", False)),
-                "structural_hash": memory.get("structural_hash", ""),
-                "built_at": memory.get("built_at", ""),
-            },
-            "warnings": warnings,
-        }
-        return {"status": "success", "result": result}
-
     def build_tree_marker(self, tree_payload: dict[str, Any]) -> dict[str, Any]:
         nodes = tree_payload.get("nodes", []) if isinstance(tree_payload, dict) else []
         links = tree_payload.get("links", []) if isinstance(tree_payload, dict) else []
@@ -2379,61 +2204,6 @@ class RuntimeDispatcher:
             return {"status": "success", "result": report}
         except Exception as exc:
             return _json_error("analyze_scene failed", details=str(exc))
-
-    def _analyze_gn_state(self, tool_input: dict[str, Any], *, output_mode: str) -> dict[str, Any]:
-        full = self._capture_full()
-        scene_snapshot = full.get("scene_snapshot")
-        if not scene_snapshot:
-            return _json_error("Failed to capture scene snapshot for analyze_gn_state")
-
-        target_tree = tool_input.get("tree_name") or ""
-        node_trees_snapshot = full.get("node_trees_snapshot") or {}
-        current_hash = ""
-        target_node_group: dict[str, Any] = {}
-        if target_tree and node_trees_snapshot:
-            for node_group in node_trees_snapshot.get("node_groups", []):
-                if node_group.get("name") == target_tree:
-                    current_hash = self._tree_hash(node_group)
-                    target_node_group = node_group
-                    break
-        if current_hash and target_tree in self._gn_analysis_cache:
-            cached_hash, cached_result = self._gn_analysis_cache[target_tree]
-            if cached_hash == current_hash:
-                result = dict(cached_result)
-                result["_cached"] = True
-                result["_cache_note"] = "Tree unchanged since last analysis."
-                return {"status": "success", "result": result}
-
-        try:
-            report = self.skill_router.analyze_gn_state(
-                scene_snapshot=scene_snapshot,
-                node_trees_snapshot=node_trees_snapshot,
-                tree_name=target_tree,
-                current_goal=tool_input.get("current_goal"),
-                query=tool_input.get("query"),
-                output_mode=tool_input.get("output_mode") or output_mode,
-            )
-
-            # W1-T3: se árvore está truncada no snapshot, fazer direct-read
-            # e anexar inventário completo ao report.
-            if target_tree and target_node_group.get("snapshot_truncated"):
-                direct = self._tool_list_tree_nodes({"tree_name": target_tree})
-                if direct.get("status") == "success":
-                    dr = direct["result"]
-                    node_count = dr.get("node_count", 0)
-                    report["inventory_from_direct_read"] = True
-                    report["full_node_list"] = dr.get("nodes", [])
-                    report["note"] = (
-                        f"Tree has {node_count} nodes; detailed analysis covers first "
-                        f"{len(target_node_group.get('nodes', []))} nodes from snapshot. "
-                        "Full node list appended via direct read."
-                    )
-
-            if current_hash and target_tree:
-                self._gn_analysis_cache[target_tree] = (current_hash, report)
-            return {"status": "success", "result": report}
-        except Exception as exc:
-            return _json_error("analyze_gn_state failed", details=str(exc))
 
     def _capture_screenshot(self, tool_input: dict[str, Any]) -> dict[str, Any]:
         max_size = int(tool_input.get("max_size", 900) or 900)

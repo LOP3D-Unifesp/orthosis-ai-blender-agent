@@ -11,7 +11,6 @@ _CANONICAL_TREE_TOOLS = frozenset(
         "build_tree_structural_memory",
         "classify_tree_phases",
         "map_clinical_parameter_roles",
-        "interpret_orthosis_tree_logic",
         "get_node_context",
         "get_selected_nodes_context",
         "get_active_frame_context",

@@ -16,10 +16,8 @@ _HEAVY_READ_TOOLS = {
     "get_local_subgraph_context",
     "classify_tree_phases",
     "map_clinical_parameter_roles",
-    "interpret_orthosis_tree_logic",
     "get_scene_summary",
     "get_gn_hosts",
-    "analyze_gn_state",
     "analyze_scene",
 }
 _MAX_READ_RESULT_CHARS = 4000
@@ -44,8 +42,6 @@ _TOOL_STATUS_PT: dict[str, str] = {
     "prepare_draft_context": "Preparando contexto de draft",
     "classify_tree_phases": "Classificando fases da árvore",
     "map_clinical_parameter_roles": "Mapeando parâmetros clínicos",
-    "interpret_orthosis_tree_logic": "Interpretando lógica da órtese",
-    "analyze_gn_state": "Analisando estado GN",
     "analyze_scene": "Analisando cena",
     "capture_screenshot": "Capturando viewport",
     "query_node_types": "Consultando tipos de nó",

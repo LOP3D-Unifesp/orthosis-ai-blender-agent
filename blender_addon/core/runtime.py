@@ -806,6 +806,40 @@ class AgentRuntime:
             )
             return TurnClass.EXECUTION_FEEDBACK, meta, "feedback_fix"
 
+        pending_kind = str(getattr(pending, "kind", "") or "")
+        diagnosis_request = bool(re.search(
+            r"\b("
+            r"diagn[oó]stic\w*|diagnostic\w*|analis\w*|analisa\w*|analisar\w*|"
+            r"investig\w*|certeza\w*|certezas\w*|verific\w*"
+            r")\b",
+            lowered,
+            re.IGNORECASE,
+        )) or bool(re.search(r"\bantes\s+de\s+(escrev\w*|salv\w*|ger\w*|cri\w*)\b", lowered, re.IGNORECASE))
+        continuation_request = bool(re.fullmatch(
+            r"\s*(continua|continue|continuar|segue|prossegue|pode continuar)\s*",
+            lowered,
+            re.IGNORECASE,
+        ))
+        if has_active_draft and (
+            diagnosis_request
+            or (
+                pending_status == "pending"
+                and pending_kind in {"strategy_choice", "repair_direction", "write_confirmation"}
+                and continuation_request
+            )
+        ):
+            signals.append("diagnose_only_request" if diagnosis_request else "pending_diagnosis_continuation")
+            meta = ClassifierMeta(
+                turn_class=TurnClass.DRAFT_WORKSPACE,
+                signals=signals,
+                raw_message=text,
+                turn_intent="diagnose_only",
+                session_state=str(getattr(es, "session_state", "") or ""),
+                goal_mode="diagnose_only",
+                needs_baseline_refresh=True,
+            )
+            return TurnClass.DRAFT_WORKSPACE, meta, "diagnose_only"
+
         write_request = bool(re.search(
             r"\b("
             r"escrev\w*|salv\w*|ger\w*|cri\w*|faz\w*|corrig\w*|corrij\w*|"

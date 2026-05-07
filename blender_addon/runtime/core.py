@@ -339,6 +339,9 @@ class Runtime:
         """Explicitly archive the current V1 session file and replace it with a clean one."""
         resolved = self._resolve_blend_path(blend_path)
         result = self._get_v1_store().archive_and_reset_v1_session(resolved)
+        new_session_id = str(result.get("new_session_id") or "")
+        if new_session_id:
+            self._start_journal_session(new_session_id, blend_file=resolved)
         try:
             self.journal.log_runtime_event(
                 event_type="session_archived_and_reset",
@@ -347,7 +350,7 @@ class Runtime:
                     "current_session_file": str(result.get("current_session_file") or ""),
                     "archive_file": str(result.get("archive_file") or ""),
                     "archived": bool(result.get("archived", False)),
-                    "new_session_id": str(result.get("new_session_id") or ""),
+                    "new_session_id": new_session_id,
                     "prior_session_id": str(
                         (result.get("archived_session") or {}).get("session_id", "")
                         if isinstance(result.get("archived_session"), dict)

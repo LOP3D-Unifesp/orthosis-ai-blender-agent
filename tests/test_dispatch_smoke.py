@@ -30,6 +30,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 class _FakeExecutionState:
     phase: str = "idle"
     current_draft: Any = None
+    pending_user_decision: Any = None
     session_state: str = "IDLE"
 
 
@@ -74,6 +75,43 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("focal_correction", goal_mode)
         self.assertEqual("draft_refinement", meta.turn_intent)
 
+    def test_diagnosis_before_write_routes_read_only_even_with_write_word(self):
+        from blender_addon.core.runtime import AgentRuntime
+        from blender_addon.runtime.router import TurnClass
+
+        session = _FakeSession()
+        session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
+
+        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+            session,
+            "Faz um diagnostico geral primeiro, analise a arvore profundamente e pegue todas as certezas que vc precisa antes de escrever.",
+        )
+
+        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
+        self.assertEqual("diagnose_only", goal_mode)
+        self.assertEqual("diagnose_only", meta.turn_intent)
+        self.assertIn("diagnose_only_request", meta.signals)
+
+    def test_pending_repair_continua_routes_to_read_only_diagnosis(self):
+        from blender_addon.core.runtime import AgentRuntime
+        from blender_addon.runtime.router import TurnClass
+
+        session = _FakeSession()
+        session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
+        session.execution_state.session_state = "STRATEGY_PROPOSED"
+        session.execution_state.pending_user_decision = types.SimpleNamespace(
+            status="pending",
+            kind="repair_direction",
+            options=["sim", "não"],
+        )
+
+        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(session, "continua")
+
+        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
+        self.assertEqual("diagnose_only", goal_mode)
+        self.assertEqual("diagnose_only", meta.turn_intent)
+        self.assertIn("pending_diagnosis_continuation", meta.signals)
+
     def test_workspace_goal_configs_are_the_live_handler_surface(self):
         from blender_addon.handler.workspace import GOAL_CONFIGS
 
@@ -87,6 +125,9 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertFalse(GOAL_CONFIGS["functional_expansion"].read_only)
         self.assertTrue(GOAL_CONFIGS["feedback_fix"].read_only)
         self.assertIn("write_script_draft", GOAL_CONFIGS["feedback_fix"].excluded_tools)
+        self.assertGreaterEqual(GOAL_CONFIGS["diagnose_only"].max_rounds, 8)
+        self.assertGreaterEqual(GOAL_CONFIGS["focal_correction"].max_rounds, 8)
+        self.assertGreaterEqual(GOAL_CONFIGS["functional_expansion"].max_rounds, 10)
         self.assertEqual(3, GOAL_CONFIGS["feedback_fix"].focal_budget_min)
 
     def test_handler_package_no_longer_exports_turn_dispatcher(self):

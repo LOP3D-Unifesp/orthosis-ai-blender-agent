@@ -78,6 +78,15 @@ def _raw_python_draft_candidate(text: str) -> str:
             best_start = idx
             break
     candidate = "\n".join(lines[best_start:]).strip()
+    candidate_lines = candidate.splitlines()
+    for end in range(len(candidate_lines), 7, -1):
+        trimmed = "\n".join(candidate_lines[:end]).strip()
+        try:
+            compile(trimmed, "<raw_agent_chat_code>", "exec")
+        except SyntaxError:
+            continue
+        if _RAW_DRAFT_CODE_MARKER_RE.search(trimmed):
+            return trimmed
     nonempty = [line for line in candidate.splitlines() if line.strip()]
     if len(nonempty) < 8:
         return ""

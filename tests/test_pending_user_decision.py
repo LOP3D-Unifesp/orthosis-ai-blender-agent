@@ -225,6 +225,30 @@ class PendingUserDecisionTests(unittest.TestCase):
             self.assertEqual("answered", result.status, f"phrase={phrase!r}")
             self.assertEqual("sim", result.answered_with, f"phrase={phrase!r}")
 
+    def test_diagnosis_first_request_does_not_approve_repair_direction(self) -> None:
+        from blender_addon.runtime.pending_decision import resolve_pending_decision, set_pending_decision
+        from blender_addon.session.schema import Session
+
+        session = Session.new("case.blend")
+        runtime = _Runtime()
+        set_pending_decision(
+            SimpleNamespace(session=session, _runtime=runtime),
+            kind="repair_direction",
+            options=["sim", "não"],
+            prompt_summary="Quer que eu siga por essa direção?",
+        )
+
+        result = resolve_pending_decision(
+            session,
+            "Faz um diagnostico geral primeiro, analise a arvore profundamente.",
+            runtime=runtime,
+        )
+
+        self.assertEqual("pending", result.status)
+        self.assertEqual("pending", session.execution_state.pending_user_decision.status)
+        self.assertEqual("", session.execution_state.pending_user_decision.answered_with)
+        self.assertNotEqual("STRATEGY_APPROVED", session.execution_state.session_state)
+
     def test_confirmo_with_two_options_triggers_clarification(self) -> None:
         # "confirmo" with options=["A","B"] → 2 positive paths → clarification needed.
         from blender_addon.runtime.pending_decision import resolve_pending_decision, set_pending_decision

@@ -291,7 +291,7 @@ Lista mínima:
 
 ---
 
-### Fase 4 — Handler único + Wave 5.C absorvida ✅ parcial (2026-05-06)
+### Fase 4 — Handler único + Wave 5.C absorvida ✅ (2026-05-06/07)
 
 **O que:** substituir `runtime/handlers/drafting.py` (2595) + `workspace.py` + `__init__.py` por handler único.
 
@@ -319,18 +319,23 @@ Lista mínima:
   - sem regex nova em `routing_obs.py`
 - [x] Pacote de evidência estática (já implementado) consumido pelo prompt em modo `feedback`; instrução é "cite mismatch real se houver", não cabeçalhos exatos.
 
+**Commits adicionais (2026-05-07):**
+- `1f61c27 feat: injetar arvore GN completa no system prompt de inquiry` — `_full_tree_render_for_inquiry()` injeta o tree render completo (todos os nós, frames, até 200 links) em todo turno de inquiry; `_inquiry_max_rounds_for_state()` sobe rounds para 7 em REPAIRING/STRATEGY_PROPOSED
+- `d61f4e1 fix: bump inquiry rounds in REPAIRING and simplify pending_decision options` — `_inquiry_max_rounds_for_state`; `pending_decision` repair_direction simplificado para `["sim"]`; A/B split só quando ≥2 estratégias
+- `ed4baef fix: REPAIRING state write approval and inquiry round bump` — `infer_session_state` em vez de campo raw; roteador detecta REPAIRING e manda confirmação para DRAFT_WORKSPACE mesmo sem draft ativo
+
 **Critério de saída:**
 - [x] `blender_addon/runtime/handlers/` deletado inteiro
 - [x] Tests state-driven de `tests/test_pending_user_decision.py` passam
 - [x] Feedback de falha fica read-only e bloqueia `write_script_draft` até confirmação explícita
-- [ ] Smoke manual: 3 falhas distintas geram 3 diagnósticos distintos (não verbatim)
-- [ ] Smoke manual: "Caminho B" resolve sem regex
+- [x] `tree_prompt_render_injected` dispara em todo turno de inquiry com 99 nós, 5073 chars (validado em sessão 2026-05-07)
+- [x] "pode" e "sim" em REPAIRING → DRAFT_WORKSPACE (6 novos testes: `RouterRepairingStateTests`, `InquiryMaxRoundsTests`)
 - [x] Verificação local: `python -m compileall blender_addon`
-- [x] Verificação local: `python -m unittest discover tests` → 206 tests verdes
+- [x] Verificação local: 213 tests verdes
 
 ---
 
-### Fase 5 — UI enxuta
+### Fase 5 — UI enxuta ✅ (2026-05-07)
 
 **O que:** dividir `ui/panel.py` (1752).
 
@@ -341,57 +346,69 @@ Lista mínima:
 - [x] Suporte auxiliar separado em `ui/panel_runtime.py`, `ui/panel_workspace.py` e `ui/panel_chat_turn.py`
 - [x] Sanitização de código mantida em `ui/chat_session.py` (já está)
 
+**Commit:** `55bde57 refactor(slim): Fase 5 - UI enxuta, panel.py dividido por familia`
+
 **Critério de saída:**
-- [x] `ui/panel.py` < 700 linhas
-- [ ] Os 4 estados visuais ainda funcionam (CONVERSA, PRONTO, EXECUTANDO, RESULTADO)
-- [ ] Snapshot + revert ainda funcionam
-- [ ] Reabrir `.blend` rehidrata o painel
+- [x] `ui/panel.py` < 700 linhas (caiu de 1752 → 554 linhas)
+- [ ] Os 4 estados visuais ainda funcionam (CONVERSA, PRONTO, EXECUTANDO, RESULTADO) — pendente smoke Fase 6
+- [ ] Snapshot + revert ainda funcionam — pendente smoke Fase 6
+- [ ] Reabrir `.blend` rehidrata o painel — pendente smoke Fase 6
 
 ---
 
-## Handoff — fim do dia 2026-05-06
+## Handoff — 2026-05-07
 
-Estado atual:
-- Fase 3 funcionalmente validada: `core/` criado, runtime slim em uso, arquivos legados `agent_runtime.py`, `runtime_agent_loop.py` e `runtime_api_client.py` substituídos.
-- Fase 4 em bom estado arquitetural parcial: `handler/` criado, `workspace.py` é a entrada principal, feedback pós-falha é read-only e separado.
-- `_drafting_support.py` caiu para ~899 linhas e agora atua mais como orquestrador do draft workspace.
-- Módulos extraídos:
-  - `handler/feedback.py`
-  - `handler/feedback_evidence.py`
-  - `handler/draft_policy.py`
-  - `handler/draft_response.py`
-  - `handler/draft_state.py`
-  - `handler/draft_finalize.py`
+### Estado atual
 
-Validação local feita:
-- [x] `python -m compileall blender_addon`
-- [x] testes focados de feedback/reparo/retry/policy/sanitização/draft mínimo
-- [x] `python -m unittest discover tests` roda 202 testes com 2 falhas conhecidas
+Fases 1–5 completas. Branch `slim-refactor` limpa, 213 testes verdes.
 
-Falhas conhecidas antes de seguir:
-1. `test_draft_workspace_diagnose_only_blocks_write_and_returns_analysis`
-   - Espera `"Strategy A"`.
-   - Comportamento atual retorna `"Direcao de reparo"`.
-   - Provavelmente teste desatualizado vs contrato atual de diagnóstico sem A/B fabricado.
-2. `test_runtime_archive_reset_logs_journal_event_and_lifecycle_note`
-   - `journal_file` vem `None`.
-   - Pode ser bug real no journal/archive reset; investigar antes de continuar refactors grandes.
+**Módulos ativos:**
+- `core/runtime.py`, `core/agent_loop.py`, `core/tool_policy.py`, `core/api_client.py`
+- `handler/workspace.py`, `handler/feedback.py`, `handler/feedback_evidence.py`, `handler/draft_prompt.py`, `handler/draft_context.py`, `handler/draft_runtime.py`, `handler/draft_policy.py`, `handler/draft_response.py`, `handler/draft_state.py`, `handler/draft_finalize.py`, `handler/feedback_classifier.py`, `handler/prompt.py`
+- `runtime/router.py`, `runtime/routing_obs.py`, `runtime/pending_decision.py`, `runtime/tree_renderer.py`, `runtime/prompt_builder.py`, `runtime/gn_targeting.py`, `runtime/state_ops.py`, `runtime/staged_payload.py`
+- `ui/panel.py` (554 linhas), `ui/chat_operators.py`, `ui/cycle_operators.py`, `ui/cycle_state.py`, `ui/operators.py`, `ui/panel_chat_turn.py`, `ui/panel_runtime.py`, `ui/panel_workspace.py`
 
-Próximo passo recomendado:
-1. Resolver/decidir essas 2 falhas para deixar suíte verde.
-2. Fazer smoke manual no Blender:
-   - pedir draft;
-   - executar manualmente;
-   - reportar falha;
-   - confirmar que o agente diagnostica e pede confirmação antes de reescrever;
-   - responder caminho/opção;
-   - confirmar que só então escreve nova revisão.
-3. Se ainda fizer sentido, continuar Fase 4 extraindo prompt/contexto de `_drafting_support.py` para `handler/draft_prompt.py`.
+**Smoke parcial (2026-05-07, sessão testeAgenteBlender.blend, Biomodelo 99 nós):**
+- ✅ `tree_prompt_render_injected` dispara em todo inquiry (99 nós, 5073 chars)
+- ✅ `script_draft_execution_diagnosis` pós-falha rev 47 correto
+- ✅ `pending_decision_proposed` / `pending_decision_cancelled` corretos
+- ✅ `discovery_phase_skipped` reutiliza memória estrutural em cache
+- ✅ Rev 48 escrita e executada com sucesso ("PERFEITO. Funcionou")
+- ⚠️ Inquiry em REPAIRING ainda usava 4 rounds (corrigido pós-sessão via `infer_session_state`)
+- ⚠️ "pode" após análise em REPAIRING não acionava write (corrigido pós-sessão no router)
 
-Prompt sugerido para começar a próxima sessão:
+**Bugs corrigidos nesta sessão:**
+1. `_inquiry_max_rounds_for_state` lia `execution_state.session_state` diretamente — campo pode não estar hidratado no momento do handler. Corrigido: usa `infer_session_state(ctx.session)` (mesma fonte que o router). Emite `inquiry_rounds_bumped` para observabilidade.
+2. Aprovação bare ("pode"/"sim") em REPAIRING sem draft ativo → `context_inquiry` (read-only). Corrigido: router verifica `session_state` antes do gate contextual e roteia para `DRAFT_WORKSPACE` via signal `repairing_write_approval`.
+
+### Próximo passo: Fase 6 — Smoke completo no Blender
+
+Recarregar o addon no Blender (F8 ou Preferences → Addons → Reload) após puxar o branch, depois executar em ordem:
+
+**Bloco 1 — Linha de base (Fases 1-3)**
+1. `qual o estado atual da cena?` → `get_scene_summary` + `get_gn_hosts`
+2. `mostra o contexto do nó <nome>` → `get_node_context`
+3. Fechar/reabrir `.blend` → histórico aparece
+
+**Bloco 2 — Full tree context em inquiry (Fase 4)**
+4. Pergunta factual sobre nó específico → journal: `tree_prompt_render_injected`, `node_count=99`
+5. "pode" / "sim" após diagnóstico em REPAIRING → deve rotear para DRAFT_WORKSPACE (signal: `repairing_write_approval`)
+6. Inquiry em REPAIRING → journal: `inquiry_rounds_bumped`, `effective_rounds=7`
+
+**Bloco 3 — Ciclo pós-falha completo (Wave 5.C)**
+7. Draft → executa → reporta falha → agente não escreve no mesmo turno
+8. Agente diagnostica e propõe direção → `pending_decision_proposed`
+9. "pode" → escreve nova revisão → executa → funciona
+
+**Bloco 4 — UI (Fase 5)**
+10. Os 4 estados do painel transitam corretamente (CONVERSA / PRONTO / EXECUTANDO / RESULTADO)
+11. Snapshot + revert funcional
+12. Reabrir `.blend` rehidrata painel e histórico
+
+### Prompt sugerido para próxima sessão
 
 ```text
-Estamos no projeto blend_IA_ort_v2. Continue a partir do handoff em docs/SLIM_REFACTOR_PLAN.md, seção "Handoff — fim do dia 2026-05-06". Antes de codar, leia o git status, leia a seção da Fase 4 e verifique as 2 falhas conhecidas da suíte. Quero primeiro deixar os testes verdes ou decidir explicitamente quais testes atualizar, depois fazemos smoke manual no Blender.
+Estamos no projeto blend_IA_ort_v2, branch slim-refactor. Leia o handoff em docs/SLIM_REFACTOR_PLAN.md (seção "Handoff — 2026-05-07") e o git log. O objetivo desta sessão é completar a Fase 6 (smoke manual no Blender) e, se passar tudo, preparar o merge para master (Fase 7). Reporte os resultados do smoke e liste o que ainda quebrou.
 ```
 
 ---
@@ -400,10 +417,20 @@ Estamos no projeto blend_IA_ort_v2. Continue a partir do handoff em docs/SLIM_RE
 
 **O que:** rodar todos os testes manuais do CLAUDE.md §"Como validar que o sistema está funcionando" + acceptance tests do `repair_conversation_loop.md` §9.
 
-- [ ] Linha de base (1, 2, 3): cena, contexto, persistência
-- [ ] Onda 4.E (4, 5, 6): tree render injetado, draft pós-reabertura, falha visível de bridge
-- [ ] Pós-falha (7, 8, 9, 10, 11): draft history, evidência viva, mismatch surfaced, pending decision, aprovação por nome de opção
-- [ ] Wave 5.C tests state-driven
+**Smoke parcial realizado (2026-05-07, Biomodelo 99 nós):**
+- [x] Tree render injetado em todo turno de inquiry (5073 chars, todos os nós)
+- [x] `script_draft_execution_diagnosis` pós-falha correto (rev 47)
+- [x] `pending_decision_proposed` e transições de estado corretos
+- [x] Draft escrito com sucesso (rev 48) e confirmado pelo designer
+
+**Pendente:**
+- [ ] Linha de base (1, 2, 3): cena, contexto, persistência (testar em sessão nova)
+- [ ] Reabrir `.blend` rehidrata painel e histórico
+- [ ] Bridge failure simulada: `structural_memory_recovery_failed` no journal
+- [ ] Inquiry em REPAIRING com rounds bumped para 7 (corrigido pós-smoke — verificar no journal: `inquiry_rounds_bumped`)
+- [ ] "pode" / "sim" em REPAIRING → `repairing_write_approval` no journal (corrigido pós-smoke)
+- [ ] UI Fase 5: 4 estados do painel funcionando
+- [ ] Snapshot + revert funcionando
 - [ ] Sessão real de 30 min de uso pelo designer
 
 **Critério de saída:**

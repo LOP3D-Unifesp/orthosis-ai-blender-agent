@@ -178,12 +178,25 @@ def _inquiry_max_rounds_for_state(ctx: TurnContext, config: GoalConfig) -> int:
     4 rounds; the agent ends up muting on `agent_loop_round_limit`. In REPAIRING
     or STRATEGY_PROPOSED we let inquiry use up to the diagnose_only budget so it
     can both explore and produce a final synthesis.
+
+    Uses infer_session_state (same source as the router) to avoid reading stale
+    cached fields that may not be hydrated by the time this handler runs.
     """
     base = int(config.max_rounds or 4)
-    es = getattr(getattr(ctx, "session", None), "execution_state", None)
-    state = str(getattr(es, "session_state", "") or "")
+    state = ""
+    try:
+        from ..runtime.routing_obs import infer_session_state
+        state = infer_session_state(ctx.session)
+    except Exception:
+        state = str(getattr(getattr(getattr(ctx, "session", None), "execution_state", None), "session_state", "") or "")
     if state in {"REPAIRING", "STRATEGY_PROPOSED"}:
-        return max(base, 7)
+        effective = max(base, 7)
+        ctx.log_event("inquiry_rounds_bumped", {
+            "session_state": state,
+            "base_rounds": base,
+            "effective_rounds": effective,
+        })
+        return effective
     return base
 
 

@@ -519,9 +519,24 @@ class TurnRouter:
                 raw_message=msg,
             )
 
+        # In REPAIRING/STRATEGY_PROPOSED state the agent has already analyzed the
+        # failure.  A bare approval ("pode", "sim") means "write the fix now."
+        # The normal contextual-confirmation gate requires recent history that may
+        # not be present after snapshot restore, so we check the state explicitly.
+        _repair_state = str(getattr(getattr(session, "execution_state", None), "session_state", "") or "")
+        if _repair_state in {"REPAIRING", "STRATEGY_PROPOSED"} and _matches_any(_CONFIRMATION_PATTERNS, msg):
+            signals.append("repairing_write_approval")
+            return TurnClass.DRAFT_WORKSPACE, ClassifierMeta(
+                turn_class=TurnClass.DRAFT_WORKSPACE,
+                confidence="medium",
+                signals=signals,
+                raw_message=msg,
+            )
+
         if _looks_like_contextual_script_confirmation(session, msg):
             signals.append("contextual_script_confirmation")
-            draft_class = TurnClass.DRAFT_WORKSPACE if _has_active_draft(session) else TurnClass.CONTEXT_INQUIRY
+            _write_eligible = _has_active_draft(session) or _repair_state in {"REPAIRING", "STRATEGY_PROPOSED"}
+            draft_class = TurnClass.DRAFT_WORKSPACE if _write_eligible else TurnClass.CONTEXT_INQUIRY
             return draft_class, ClassifierMeta(
                 turn_class=draft_class,
                 confidence="medium",

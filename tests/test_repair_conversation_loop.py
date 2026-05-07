@@ -237,5 +237,95 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertIn("Direcao de reparo", response)
 
 
+class RouterRepairingStateTests(unittest.TestCase):
+    """Router correctly handles write approval signals in REPAIRING state."""
+
+    def _session_repairing(self):
+        from blender_addon.session.schema import Session
+
+        session = Session.new("case.blend")
+        session.execution_state.session_state = "REPAIRING"
+        session.execution_state.draft_revision = 47
+        # Snapshot was restored — no live draft object, but state is REPAIRING
+        session.execution_state.current_draft = None
+        return session
+
+    def test_pode_in_repairing_routes_to_draft_workspace(self) -> None:
+        """'pode' in REPAIRING state without active draft → DRAFT_WORKSPACE."""
+        from blender_addon.runtime.router import TurnClass, TurnRouter
+
+        router = TurnRouter()
+        session = self._session_repairing()
+        turn_class, meta = router._classify_inner(session, "pode")
+        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
+        self.assertIn("repairing_write_approval", meta.signals)
+
+    def test_sim_in_repairing_routes_to_draft_workspace(self) -> None:
+        """'sim' in REPAIRING state without active draft → DRAFT_WORKSPACE."""
+        from blender_addon.runtime.router import TurnClass, TurnRouter
+
+        router = TurnRouter()
+        session = self._session_repairing()
+        turn_class, meta = router._classify_inner(session, "sim")
+        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
+
+    def test_generic_inquiry_in_repairing_still_goes_to_inquiry(self) -> None:
+        """Non-confirmation message in REPAIRING → context_inquiry (not forced to write)."""
+        from blender_addon.runtime.router import TurnClass, TurnRouter
+
+        router = TurnRouter()
+        session = self._session_repairing()
+        turn_class, _ = router._classify_inner(session, "qual o estado da arvore?")
+        self.assertEqual(TurnClass.CONTEXT_INQUIRY, turn_class)
+
+
+class InquiryMaxRoundsTests(unittest.TestCase):
+    """_inquiry_max_rounds_for_state bumps rounds correctly in repair states."""
+
+    def _ctx_with_state(self, state: str):
+        from blender_addon.handler import TurnContext
+        from blender_addon.runtime.router import ClassifierMeta, TurnClass
+        from blender_addon.session.schema import Session
+
+        session = Session.new("test.blend")
+        session.execution_state.session_state = state
+        runtime = SimpleNamespace(
+            journal=SimpleNamespace(log_runtime_event=lambda **kw: None),
+            _session_state={},
+        )
+        return TurnContext(
+            session=session,
+            message="teste",
+            meta=ClassifierMeta(turn_class=TurnClass.CONTEXT_INQUIRY),
+            blend_path="",
+            _runtime=runtime,
+            knowledge_dir=Path("/nonexistent"),
+        )
+
+    def test_repairing_state_bumps_to_7(self) -> None:
+        from blender_addon.handler.workspace import GoalConfig, _inquiry_max_rounds_for_state
+
+        config = GoalConfig(name="inquiry", turn_class="context_inquiry", read_only=True, max_rounds=4)
+        ctx = self._ctx_with_state("REPAIRING")
+        result = _inquiry_max_rounds_for_state(ctx, config)
+        self.assertEqual(7, result)
+
+    def test_strategy_proposed_bumps_to_7(self) -> None:
+        from blender_addon.handler.workspace import GoalConfig, _inquiry_max_rounds_for_state
+
+        config = GoalConfig(name="inquiry", turn_class="context_inquiry", read_only=True, max_rounds=4)
+        ctx = self._ctx_with_state("STRATEGY_PROPOSED")
+        result = _inquiry_max_rounds_for_state(ctx, config)
+        self.assertEqual(7, result)
+
+    def test_idle_state_keeps_base_rounds(self) -> None:
+        from blender_addon.handler.workspace import GoalConfig, _inquiry_max_rounds_for_state
+
+        config = GoalConfig(name="inquiry", turn_class="context_inquiry", read_only=True, max_rounds=4)
+        ctx = self._ctx_with_state("IDLE")
+        result = _inquiry_max_rounds_for_state(ctx, config)
+        self.assertEqual(4, result)
+
+
 if __name__ == "__main__":
     unittest.main()

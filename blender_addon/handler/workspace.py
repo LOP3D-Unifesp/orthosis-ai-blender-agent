@@ -15,6 +15,12 @@ from dataclasses import dataclass
 
 from . import HandlerResult, TurnContext
 from ..runtime_planning import is_scene_wide_gn_inspection_request
+from .draft_context import (
+    _refresh_baseline_from_structural_memory,
+    _tree_render_block,
+    _tree_render_observability,
+)
+from .draft_runtime import _with_draft_streaming_disabled
 from .prompt import build_system_prompt
 
 
@@ -43,7 +49,7 @@ GOAL_CONFIGS: dict[str, GoalConfig] = {
         name="diagnose_only",
         turn_class="draft_workspace",
         read_only=True,
-        max_rounds=4,
+        max_rounds=8,
         knowledge_budget=800,
         excluded_tools=frozenset({"execute_code", "make_plan", "write_script_draft"}),
     ),
@@ -51,7 +57,7 @@ GOAL_CONFIGS: dict[str, GoalConfig] = {
         name="focal_correction",
         turn_class="draft_workspace",
         read_only=False,
-        max_rounds=4,
+        max_rounds=8,
         knowledge_budget=800,
         excluded_tools=frozenset({"execute_code", "make_plan"}),
     ),
@@ -59,7 +65,7 @@ GOAL_CONFIGS: dict[str, GoalConfig] = {
         name="functional_expansion",
         turn_class="draft_workspace",
         read_only=False,
-        max_rounds=5,
+        max_rounds=10,
         knowledge_budget=800,
         excluded_tools=frozenset({"execute_code", "make_plan"}),
     ),
@@ -109,13 +115,31 @@ def _handle_inquiry(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     if tree_render:
         system += tree_render
 
+    effective_max_rounds = _inquiry_max_rounds_for_state(ctx, config)
+
     text = ctx.call_agent_loop(
         system,
         ctx.build_messages(),
         excluded_tools=config.excluded_tools,
-        max_rounds=config.max_rounds,
+        max_rounds=effective_max_rounds,
     )
     return HandlerResult(response_text=text)
+
+
+def _inquiry_max_rounds_for_state(ctx: TurnContext, config: GoalConfig) -> int:
+    """Bump rounds for read-only inquiry while we are still repairing a failed draft.
+
+    Mapping links across a 99-node tree to explain a regression does not fit in
+    4 rounds; the agent ends up muting on `agent_loop_round_limit`. In REPAIRING
+    or STRATEGY_PROPOSED we let inquiry use up to the diagnose_only budget so it
+    can both explore and produce a final synthesis.
+    """
+    base = int(config.max_rounds or 4)
+    es = getattr(getattr(ctx, "session", None), "execution_state", None)
+    state = str(getattr(es, "session_state", "") or "")
+    if state in {"REPAIRING", "STRATEGY_PROPOSED"}:
+        return max(base, 7)
+    return base
 
 
 def _maybe_tree_render_for_factual_inquiry(ctx: TurnContext) -> str:
@@ -159,16 +183,14 @@ def _maybe_tree_render_for_factual_inquiry(ctx: TurnContext) -> str:
                 "reason": "factual_tree_inquiry_empty_structural_memory",
             })
             return ""
-        from . import _drafting_support as drafting
-
-        rendered = drafting._tree_render_block(memory)
+        rendered = _tree_render_block(memory)
         if not rendered:
             return ""
         ctx.log_event(
             "tree_prompt_render_injected",
-            drafting._tree_render_observability(memory, rendered),
+            _tree_render_observability(memory, rendered),
         )
-        drafting._refresh_baseline_from_structural_memory(ctx, memory)
+        _refresh_baseline_from_structural_memory(ctx, memory)
         return rendered
     except Exception as exc:
         ctx.log_event("structural_memory_recovery_failed", {
@@ -230,7 +252,7 @@ def _handle_draft_goal(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     if ctx._runtime is not None:
         ctx._runtime._draft_tool_policy = tool_policy
     try:
-        text = drafting._with_draft_streaming_disabled(
+        text = _with_draft_streaming_disabled(
             ctx,
             lambda: ctx.call_agent_loop(
                 system,

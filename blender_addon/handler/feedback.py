@@ -5,13 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from . import HandlerResult, TurnContext
-from ._drafting_support import (
-    _EXECUTION_DIAGNOSIS_RE,
-    _classify_execution_feedback,
-    _compact_structural_memory,
-    _prepare_structural_memory,
-    _replace_last_assistant_message,
-)
+from .draft_context import _compact_structural_memory, _prepare_structural_memory
+from .draft_runtime import _replace_last_assistant_message
 from .draft_response import _brief_chat_summary
 from .draft_state import _sync_draft_metadata_from_read, _target_tree_for_draft
 from .feedback_evidence import (
@@ -23,6 +18,7 @@ from .feedback_evidence import (
     _read_failed_draft_info,
     _render_failed_draft_evidence_pack,
 )
+from .feedback_classifier import _EXECUTION_DIAGNOSIS_RE, _classify_execution_feedback
 from .prompt import build_post_failure_diagnosis_contract
 from ..runtime.pending_decision import set_pending_decision
 
@@ -195,14 +191,21 @@ def handle(ctx: TurnContext) -> HandlerResult:
                 es.proposed_strategy_revision = int(current_revision or 0)
                 es.approved_strategy_label = ""
                 es.approved_strategy_prompt = ""
-                use_ab = diagnosis_strategy_count >= 1
-                decision_options = ["A", "B"] if use_ab else ["sim", "não"]
-                decision_kind = "strategy_choice" if use_ab else "repair_direction"
-                decision_summary = (
-                    "Qual caminho voce aprova para a proxima revisao, A ou B?"
-                    if use_ab
-                    else "Confirmar direção de reparo antes da próxima revisão."
-                )
+                use_ab = diagnosis_strategy_count >= 2
+                if use_ab:
+                    decision_options = ["A", "B"]
+                    decision_kind = "strategy_choice"
+                    decision_summary = "Qual caminho voce aprova para a proxima revisao, A ou B?"
+                else:
+                    # No A/B split (count 0 or 1). A bare ["sim", "não"] is redundant —
+                    # upstream `_is_clear_denial` already cancels on "não". Use a single
+                    # positive option so `_match_option`'s single-positive path accepts
+                    # any affirmative ("ok", "pode", "segue") or strategy phrase
+                    # ("seguir", "essa direção") without forcing the user to guess
+                    # between "sim" and "não".
+                    decision_options = ["sim"]
+                    decision_kind = "repair_direction"
+                    decision_summary = "Confirmar direção de reparo antes da próxima revisão."
                 set_pending_decision(
                     ctx,
                     kind=decision_kind,

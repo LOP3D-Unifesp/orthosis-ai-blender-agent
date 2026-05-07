@@ -163,7 +163,9 @@ class RepairConversationLoopTests(unittest.TestCase):
 
         self.assertIn("draft claims no falanges changed, but touched nodes/frames include falange-related names", result.response_text)
         self.assertIn("Quer que eu siga por essa direção", result.response_text)
-        self.assertEqual(["sim", "não"], session.execution_state.pending_user_decision.options)
+        # Single positive option: upstream `_is_clear_denial` already cancels on "não",
+        # so listing "não" alongside "sim" was redundant and confused the user.
+        self.assertEqual(["sim"], session.execution_state.pending_user_decision.options)
         self.assertEqual("repair_direction", session.execution_state.pending_user_decision.kind)
         payload = [e for e in runtime.journal.events if e["event_type"] == "script_draft_execution_diagnosis"][-1]["payload"]
         self.assertFalse(payload["diagnosis_missing_sections"])

@@ -1772,7 +1772,9 @@ class FoundationStabilizationTests(unittest.TestCase):
 
         self.assertEqual("blocked", tool_status.get("write_script_draft"))
         self.assertIn("Likely failure", result.response_text)
-        self.assertIn("Strategy A", result.response_text)
+        self.assertIn("Direcao de reparo", result.response_text)
+        self.assertIn("Next step", result.response_text)
+        self.assertNotIn("Strategy A", result.response_text)
         self.assertNotIn("Text Editor", result.response_text)
 
     def test_execution_feedback_retry_cycle_updates_same_draft_and_clears_retry_state(self):
@@ -2004,7 +2006,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("STRATEGY_PROPOSED", session.execution_state.post_failure_state)
         self.assertEqual("STRATEGY_PROPOSED", session.execution_state.session_state)
         self.assertIsNotNone(getattr(session.execution_state, "pending_user_decision", None))
-        self.assertEqual(["sim", "não"], session.execution_state.pending_user_decision.options)
+        self.assertEqual(["sim"], session.execution_state.pending_user_decision.options)
         self.assertEqual(4, session.execution_state.proposed_strategy_revision)
         diagnosis_events = [event for event in runtime.journal.events if event["event_type"] == "script_draft_execution_diagnosis"]
         self.assertEqual("draft_history", diagnosis_events[-1]["payload"]["failed_draft_source"])
@@ -2113,7 +2115,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("só vou escrever uma nova revisão depois dessa confirmação", result.response_text)
         self.assertEqual("STRATEGY_PROPOSED", session.execution_state.post_failure_state)
         self.assertIsNotNone(getattr(session.execution_state, "pending_user_decision", None))
-        self.assertEqual(["sim", "não"], session.execution_state.pending_user_decision.options)
+        self.assertEqual(["sim"], session.execution_state.pending_user_decision.options)
         self.assertEqual(7, session.execution_state.proposed_strategy_revision)
         diagnosis_events = [event for event in runtime.journal.events if event["event_type"] == "script_draft_execution_diagnosis"]
         payload = diagnosis_events[-1]["payload"]

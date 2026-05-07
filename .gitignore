@@ -1,5 +1,8 @@
 # Runtime state — generated automatically by the addon at startup
-runtime/
+/runtime/
+/blender_addon/runtime/journal/
+/blender_addon/runtime/sessions/
+/blender_addon/runtime/sessions_v1/
 
 # Python bytecode
 **/__pycache__/

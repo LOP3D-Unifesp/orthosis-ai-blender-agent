@@ -311,7 +311,7 @@ Lista mínima:
 - [x] Quarto corte de `_drafting_support.py`: sanitização de chat, resumo de draft e guards de resposta saíram para `handler/draft_response.py`
 - [x] Quinto corte de `_drafting_support.py`: leitura/sync de draft e detectores de modo saíram para `handler/draft_state.py`
 - [x] Sexto corte de `_drafting_support.py`: inspeção de writes, motivos de não-escrita e retry guidance saíram para `handler/draft_finalize.py`
-- [ ] Reduzir o restante de `_drafting_support.py` para helpers menores de prompt/contexto do draft workspace
+- [x] Reduzir o restante de `_drafting_support.py` para helpers menores de prompt/contexto do draft workspace (`draft_context.py`, `draft_prompt.py`, `draft_runtime.py`, `feedback_classifier.py`)
 - [x] **Wave 5.C absorvida:**
   - `set_pending_decision()` é o único caminho de emitir pergunta A/B
   - resolução de pending decision feita em `core.runtime.run_turn` antes do handler ser chamado
@@ -326,7 +326,7 @@ Lista mínima:
 - [ ] Smoke manual: 3 falhas distintas geram 3 diagnósticos distintos (não verbatim)
 - [ ] Smoke manual: "Caminho B" resolve sem regex
 - [x] Verificação local: `python -m compileall blender_addon`
-- [x] Verificação local: `python -m unittest discover tests` → 201 tests, 2 falhas pré-existentes
+- [x] Verificação local: `python -m unittest discover tests` → 206 tests verdes
 
 ---
 
@@ -334,13 +334,15 @@ Lista mínima:
 
 **O que:** dividir `ui/panel.py` (1752).
 
-- [ ] `ui/operators.py` ← todas as classes `bpy.types.Operator` (`BLEND_OT_*`)
-- [ ] `ui/panel.py` enxuto ← só `draw()` + property registration + render dos 4 estados de `work_cycle_phase`
-- [ ] Lógica de transição de fase movida pra `core/runtime.py` ou helper dedicado (já estava no plano da Onda 5)
-- [ ] Sanitização de código mantida em `ui/chat_session.py` (já está)
+- [x] `ui/operators.py` ← classes `bpy.types.Operator` do painel extraídas (`CHAT_OT_*` e `BLEND_OT_*`)
+- [x] Operadores divididos por família: `ui/chat_operators.py` e `ui/cycle_operators.py`, com `ui/operators.py` só agregando registro
+- [x] `ui/panel.py` enxuto ← só `draw()` + property registration + render dos 4 estados de `work_cycle_phase`
+- [x] Lógica de transição de fase movida para helper dedicado `ui/cycle_state.py`
+- [x] Suporte auxiliar separado em `ui/panel_runtime.py`, `ui/panel_workspace.py` e `ui/panel_chat_turn.py`
+- [x] Sanitização de código mantida em `ui/chat_session.py` (já está)
 
 **Critério de saída:**
-- [ ] `ui/panel.py` < 700 linhas
+- [x] `ui/panel.py` < 700 linhas
 - [ ] Os 4 estados visuais ainda funcionam (CONVERSA, PRONTO, EXECUTANDO, RESULTADO)
 - [ ] Snapshot + revert ainda funcionam
 - [ ] Reabrir `.blend` rehidrata o painel

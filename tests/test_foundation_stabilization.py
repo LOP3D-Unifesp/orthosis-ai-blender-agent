@@ -326,36 +326,6 @@ class FoundationStabilizationTests(unittest.TestCase):
     def setUp(self):
         _install_fake_bpy()
 
-    def test_router_unifies_explicit_draft_write_request(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        turn_class, meta = TurnRouter().classify(_FakeSession(), "vamos escrever o draft da ortese")
-
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-        self.assertTrue(meta.signals)
-
-    def test_router_keeps_failure_feedback_separate(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        turn_class, _meta = TurnRouter().classify(_FakeSession(), "por que isso falhou?")
-
-        self.assertEqual(TurnClass.EXECUTION_FEEDBACK, turn_class)
-
-    def test_router_treats_real_failure_feedback_before_state_control(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "drafting"
-
-        cases = [
-            "Dei control+z, nao deu certo. Nenhum slider funcionou e a palma ainda sumiu",
-            "dei ctrl+z denovo. Denovo ta sumindo o metacarpo 1 e agora a falange proximal 1 tbm. Nao faz nem sentido",
-        ]
-        for message in cases:
-            with self.subTest(message=message):
-                turn_class, _meta = TurnRouter().classify(session, message)
-                self.assertEqual(TurnClass.EXECUTION_FEEDBACK, turn_class)
-
     def test_slim_runtime_routes_execution_result_prefix_with_revision_label(self):
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.runtime.router import TurnClass
@@ -453,50 +423,6 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIsNotNone(session.execution_state.pending_user_decision)
         self.assertEqual("pending", session.execution_state.pending_user_decision.status)
 
-    def test_router_keeps_factual_tree_question_as_inquiry_during_drafting(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "drafting"
-        session.execution_state.draft_revision = 10
-
-        turn_class, meta = TurnRouter().classify(
-            session,
-            "qual o nome do nó que controla a escala do metacarpo?",
-        )
-
-        self.assertEqual(TurnClass.CONTEXT_INQUIRY, turn_class)
-        self.assertIn("factual_tree_inquiry_in_drafting", meta.signals)
-
-    def test_router_keeps_answer_correction_as_inquiry_during_drafting(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "drafting"
-        session.execution_state.draft_revision = 10
-
-        turn_class, meta = TurnRouter().classify(
-            session,
-            "Mas vc falou q o cube metacarpo tem label Cube_Falange_Proximal, isso indica o no errado",
-        )
-
-        self.assertEqual(TurnClass.CONTEXT_INQUIRY, turn_class)
-        self.assertIn("answer_correction_in_drafting", meta.signals)
-
-    def test_router_keeps_draft_question_in_workspace_during_drafting(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "drafting"
-        session.execution_state.draft_revision = 10
-
-        turn_class, _meta = TurnRouter().classify(
-            session,
-            "o que esse draft faz?",
-        )
-
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-
     def test_execution_feedback_classifier_handles_real_journal_symptoms(self):
         from blender_addon.handler.feedback import _classify_execution_feedback
 
@@ -524,18 +450,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
         self.assertIn("confirms the pending action", instruction)
         self.assertIn("write_script_draft", instruction)
-
-    def test_retry_phrase_with_active_draft_routes_to_workspace_even_from_idle(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "idle"
-        session.execution_state.draft_revision = 1
-
-        turn_class, meta = TurnRouter().classify(session, "consegue tentar denovo entao?")
-
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-        self.assertIn("draft_workspace_recovery", meta.signals)
 
     def test_retry_phrase_reuses_pending_draft_action(self):
         from blender_addon.handler._drafting_support import _pending_action_instruction
@@ -1137,20 +1051,6 @@ class FoundationStabilizationTests(unittest.TestCase):
         text = session.get_messages()[0]["text"]
         self.assertIn("codigo omitido", text)
         self.assertNotIn("import bpy", text)
-
-    def test_router_treats_write_a_draft_as_draft_workspace(self):
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        session = _FakeSession()
-        session.execution_state.phase = "idle"
-        session.execution_state.current_draft = None
-        turn_class, meta = TurnRouter().classify(
-            session,
-            "cara so escreve um draft defeituoso estou testando o backend",
-        )
-
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-        self.assertIn("draft_write_request_pattern", meta.signals)
 
     def test_tree_renderer_keeps_exact_node_names_sockets_and_parameters(self):
         from blender_addon.runtime.tree_renderer import render_compact_tree

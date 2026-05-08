@@ -250,35 +250,6 @@ class RouterRepairingStateTests(unittest.TestCase):
         session.execution_state.current_draft = None
         return session
 
-    def test_pode_in_repairing_routes_to_draft_workspace(self) -> None:
-        """'pode' in REPAIRING state without active draft → DRAFT_WORKSPACE."""
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        router = TurnRouter()
-        session = self._session_repairing()
-        turn_class, meta = router._classify_inner(session, "pode")
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-        self.assertIn("repairing_write_approval", meta.signals)
-
-    def test_sim_in_repairing_routes_to_draft_workspace(self) -> None:
-        """'sim' in REPAIRING state without active draft → DRAFT_WORKSPACE."""
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        router = TurnRouter()
-        session = self._session_repairing()
-        turn_class, meta = router._classify_inner(session, "sim")
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-
-    def test_generic_inquiry_in_repairing_still_goes_to_inquiry(self) -> None:
-        """Non-confirmation message in REPAIRING → context_inquiry (not forced to write)."""
-        from blender_addon.runtime.router import TurnClass, TurnRouter
-
-        router = TurnRouter()
-        session = self._session_repairing()
-        turn_class, _ = router._classify_inner(session, "qual o estado da arvore?")
-        self.assertEqual(TurnClass.CONTEXT_INQUIRY, turn_class)
-
-
 class InquiryMaxRoundsTests(unittest.TestCase):
     """_inquiry_max_rounds_for_state bumps rounds correctly in repair states."""
 

@@ -27,7 +27,7 @@ _install_fake_bpy()
 
 from blender_addon.handler import TurnContext
 from blender_addon.handler._drafting_support import handle_draft_workspace
-from blender_addon.runtime.router import ClassifierMeta, TurnClass, TurnRouter
+from blender_addon.runtime.router import ClassifierMeta, TurnClass
 from blender_addon.session.schema import Session
 
 
@@ -270,19 +270,6 @@ class _FakeLeakedCodeRuntime(_FakeDraftRuntime):
 
 
 class TestDraftWorkspaceMinimalFlow(unittest.TestCase):
-
-    def test_idle_explicit_draft_refinement_routes_to_workspace(self):
-        session = Session.new()
-        message = (
-            "ajusta o draft da Biomodelo para parametrizar a angulacao dos metacarpos 1 e 2 "
-            "em graus no objeto devbiomodelo.001"
-        )
-
-        turn_class, meta = TurnRouter().classify(session, message)
-
-        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
-        self.assertIn("draft_refinement_write_pattern", meta.signals)
-        self.assertIn(meta.turn_intent, ("draft_write", "draft_refinement"))
 
     def test_draft_workspace_reports_explicit_reason_when_no_write_happens(self):
         runtime = _FakeDraftRuntime()

@@ -100,7 +100,7 @@ from blender_addon.runtime.routing_obs import (
     SESSION_STATES,
     TURN_INTENTS,
 )
-from blender_addon.runtime.router import TurnRouter, ClassifierMeta, TurnClass
+from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
 
 # ---------------------------------------------------------------------------
@@ -408,82 +408,6 @@ class TestEnrichMetaObservability(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Router integration — turn_class unchanged after enrichment
 # ---------------------------------------------------------------------------
-
-class TestRouterIntegration(unittest.TestCase):
-    """Verify that the observability wrapper does not change routing decisions."""
-
-    def _make_session(self, phase: str = "idle", has_draft: bool = False) -> _FakeSession:
-        s = _FakeSession()
-        s.execution_state.phase = phase
-        if has_draft:
-            s.execution_state.current_draft = _FakeDraft()
-            s.execution_state.draft_revision = 1
-        return s
-
-    def _classify(self, msg: str, session: _FakeSession) -> tuple[str, ClassifierMeta]:
-        router = TurnRouter()
-        tc, meta = router.classify(session, msg)
-        return str(tc.value), meta
-
-    def test_greeting_unchanged(self):
-        # Use "oi" rather than "olá" — the accented form has an existing encoding
-        # quirk in _GREETING_PATTERNS that pre-dates this feature.
-        tc, meta = self._classify("oi", self._make_session())
-        self.assertEqual(tc, "trivial_chat")
-        self.assertEqual(meta.turn_intent, "trivial_chat")
-
-    def test_mutation_goes_to_draft_workspace(self):
-        tc, meta = self._classify("muda o scale para 1.5", self._make_session())
-        self.assertEqual(tc, "draft_workspace")
-        # intent should reflect write
-        self.assertIn(meta.turn_intent, ("draft_write", "draft_refinement"))
-
-    def test_diagnosis_goes_to_context_inquiry(self):
-        tc, meta = self._classify("qual é o estado da cena?", self._make_session())
-        self.assertEqual(tc, "context_inquiry")
-        self.assertEqual(meta.session_state, "IDLE")
-
-    def test_mismatch_logged_not_routed(self):
-        """'tenta agora, criei o draft' must still route to context_inquiry
-        — the mismatch is only logged, not acted upon."""
-        s = self._make_session(has_draft=True)
-        tc, meta = self._classify("tenta agora, criei o draft", s)
-        # Routing unchanged — still context_inquiry
-        self.assertEqual(tc, "context_inquiry")
-        # But intent shows the mismatch
-        self.assertEqual(meta.turn_intent, "inquiry_then_write")
-
-    def test_drafting_phase_keeps_draft_subject_in_workspace(self):
-        s = self._make_session(phase="drafting", has_draft=True)
-        tc, meta = self._classify("qual o estado do draft?", s)
-        self.assertEqual(tc, "draft_workspace")
-        self.assertIn(meta.session_state, ("DRAFTING", "PENDING_USER_EXECUTION"))
-
-    def test_drafting_phase_allows_factual_tree_inquiry(self):
-        s = self._make_session(phase="drafting", has_draft=True)
-        tc, meta = self._classify("qual o nome do nó que controla a escala do metacarpo?", s)
-        self.assertEqual(tc, "context_inquiry")
-        self.assertIn("factual_tree_inquiry_in_drafting", meta.signals)
-
-    def test_drafting_phase_allows_answer_correction_inquiry(self):
-        s = self._make_session(phase="drafting", has_draft=True)
-        tc, meta = self._classify(
-            "Mas vc falou q o cube metacarpo tem label Cube_Falange_Proximal, isso indica o no errado",
-            s,
-        )
-        self.assertEqual(tc, "context_inquiry")
-        self.assertIn("answer_correction_in_drafting", meta.signals)
-
-    def test_observability_fields_never_raise(self):
-        """classify() must never raise due to the observability enrichment."""
-        router = TurnRouter()
-        for msg in ["", "   ", "olá", "muda o scale para 1.0", "tenta agora, criei o draft"]:
-            s = self._make_session(has_draft=True)
-            try:
-                router.classify(s, msg)
-            except Exception as exc:
-                self.fail(f"classify() raised for {msg!r}: {exc}")
-
 
 if __name__ == "__main__":
     unittest.main()

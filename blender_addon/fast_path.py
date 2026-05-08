@@ -29,8 +29,30 @@ Fast paths
 from __future__ import annotations
 
 import json
-import re
+import unicodedata
 from typing import Any
+
+
+def _clean_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
+    return " ".join(normalized.split())
+
+
+def _message_words(value: str) -> list[str]:
+    return _clean_text(value).split()
+
+
+def _has_prefix(words: list[str], *prefixes: str) -> bool:
+    return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
+
+
+def _has_phrase(words: list[str], *phrase_words: str) -> bool:
+    size = len(phrase_words)
+    if size == 0 or len(words) < size:
+        return False
+    return any(tuple(words[index:index + size]) == phrase_words for index in range(len(words) - size + 1))
 
 
 # ---------------------------------------------------------------------------
@@ -61,25 +83,6 @@ _GREETING_REPLIES: dict[str, str] = {
 }
 
 _AMBIGUOUS_GREETING_TOKENS = {"ok", "certo", "perfeito", "entendido"}
-_WORK_CONTEXT_RE = re.compile(
-    r"\b("
-    r"script|c[oó]digo|python|bpy|execute_code|socket|painel|panel|interface|"
-    r"geometry\s+nodes|node|blender|erro|falhou|truncad|executar|rodar|"
-    r"adicion|criar|alterar|modificar|input|output"
-    r")\b",
-    re.IGNORECASE,
-)
-
-# Fullmatch patterns on the cleaned (lowered, rstripped) message.
-# Only covers multi-word combos not reachable via the dict above.
-_GREETING_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"oi\s*,?\s*tudo\s*(bem|bom)\??"),
-     "Oi! Tudo bem! Como posso ajudar?"),
-    (re.compile(r"ol[aá]\s*,?\s*tudo\s*(bem|bom)\??"),
-     "Olá! Tudo bem! Como posso ajudar?"),
-]
-
-
 def _recent_history_texts(session: Any, limit: int = 6) -> list[str]:
     history = getattr(getattr(session, "history", None), "messages", []) or []
     texts: list[str] = []
@@ -91,13 +94,22 @@ def _recent_history_texts(session: Any, limit: int = 6) -> list[str]:
 
 
 def _has_recent_work_context(session: Any) -> bool:
-    joined = "\n".join(_recent_history_texts(session))
-    return bool(joined and _WORK_CONTEXT_RE.search(joined))
+    words = _message_words("\n".join(_recent_history_texts(session)))
+    word_set = set(words)
+    return (
+        bool({
+            "script", "codigo", "python", "bpy", "execute_code", "socket",
+            "painel", "panel", "interface", "node", "blender", "erro",
+            "falhou", "input", "output",
+        } & word_set)
+        or _has_phrase(words, "geometry", "nodes")
+        or _has_prefix(words, "truncad", "executar", "rodar", "adicion", "criar", "alterar", "modificar")
+    )
 
 
 def _try_greeting(msg_lower: str, session: Any) -> tuple[str, dict] | None:
     """Return a canned reply for simple greetings, or None."""
-    clean = msg_lower.rstrip(" !.,?").strip()
+    clean = _clean_text(msg_lower)
 
     if clean in _AMBIGUOUS_GREETING_TOKENS and _has_recent_work_context(session):
         return None
@@ -106,9 +118,11 @@ def _try_greeting(msg_lower: str, session: Any) -> tuple[str, dict] | None:
     if reply:
         return reply, {"fp_type": "greeting"}
 
-    for pat, resp in _GREETING_PATTERNS:
-        if pat.fullmatch(clean):
-            return resp, {"fp_type": "greeting"}
+    words = clean.split()
+    if words in (["oi", "tudo", "bem"], ["oi", "tudo", "bom"]):
+        return "Oi! Tudo bem! Como posso ajudar?", {"fp_type": "greeting"}
+    if words in (["ola", "tudo", "bem"], ["ola", "tudo", "bom"]):
+        return "Olá! Tudo bem! Como posso ajudar?", {"fp_type": "greeting"}
 
     return None
 
@@ -129,30 +143,29 @@ _HELP_TEXT = (
     "  qual o estado da cena?"
 )
 
-_HELP_RE = re.compile(
-    r"^(?:"
-    r"ajuda|help|socorro|"
-    r"o\s+que\s+(?:você|voce)\s+(?:pode\s+)?(?:fazer|me\s+ajudar)|"
-    r"quais?\s+(?:são\s+)?(?:as\s+)?(?:ferramentas|comandos|funções|funcoes|opções|opcoes)|"
-    r"como\s+(?:você|voce)\s+funciona|"
-    r"o\s+que\s+[eéê]\s+isso|"
-    r"what\s+(?:can\s+you\s+do|are\s+your\s+tools)|"
-    r"list\s+tools?"
-    r")$",
-    re.IGNORECASE,
-)
-
-
 def _try_help(msg_lower: str) -> tuple[str, dict] | None:
-    clean = msg_lower.rstrip(" !.,?").strip()
-    if _HELP_RE.match(clean):
+    words = _message_words(msg_lower)
+    word_set = set(words)
+    if (
+        words in (["ajuda"], ["help"], ["socorro"])
+        or _has_phrase(words, "o", "que", "voce", "fazer")
+        or _has_phrase(words, "o", "que", "voce", "pode", "fazer")
+        or _has_phrase(words, "o", "que", "voce", "me", "ajudar")
+        or ("quais" in word_set and bool({"ferramentas", "comandos", "funcoes", "opcoes"} & word_set))
+        or ("qual" in word_set and bool({"ferramentas", "comandos", "funcoes", "opcoes"} & word_set))
+        or ("como" in word_set and "voce" in word_set and "funciona" in word_set)
+        or _has_phrase(words, "o", "que", "e", "isso")
+        or _has_phrase(words, "what", "can", "you", "do")
+        or _has_phrase(words, "what", "are", "your", "tools")
+        or _has_phrase(words, "list", "tools")
+        or words == ["list", "tool"]
+    ):
         return _HELP_TEXT, {"fp_type": "help"}
     return None
 
 
 def _try_blender_console_help(msg_lower: str) -> tuple[str, dict] | None:
-    clean = msg_lower.rstrip(" !.,?").strip()
-    words = set(clean.replace("?", " ").split())
+    words = set(_message_words(msg_lower))
     asks_where = bool(words & {"onde", "cadê", "cade"})
     asks_prints = bool(words & {"print", "prints", "imprimiu", "impressao", "impressão", "console"})
     if not (asks_where and asks_prints):
@@ -170,37 +183,16 @@ def _try_blender_console_help(msg_lower: str) -> tuple[str, dict] | None:
 # Fast path 3: Simple reads (get_node_context without LLM)
 # ---------------------------------------------------------------------------
 
-# Verb-first: "mostra [o] [contexto [do]] [nó] NAME"
-_READ_VERB_RE = re.compile(
-    r"^(?:mostr[ae]|show|ver|veja?|exib[ae])\s+"
-    r"(?:o\s+)?(?:contexto\s+)?(?:d[oae]\s+)?(?:n[oó]\s+)?"
-    r"(?P<node>\S+)\s*$",
-    re.IGNORECASE,
-)
-# Noun-first: "contexto [do] [nó] NAME"
-_READ_CONTEXT_RE = re.compile(
-    r"^contexto\s+(?:d[oae]\s+)?(?:n[oó]\s+)?(?P<node>\S+)\s*$",
-    re.IGNORECASE,
-)
-# Question: "o que é [o] [nó] NAME"
-_READ_WHAT_RE = re.compile(
-    r"^o\s+que\s+[eéê]\s+(?:o\s+)?(?:n[oó]\s+)?(?P<node>\S+)\s*$",
-    re.IGNORECASE,
-)
-
-
 def _try_simple_read(msg: str, runtime: Any) -> tuple[str, dict] | None:
     """Call get_node_context directly and return its output.  Falls through on error."""
     clean = msg.strip().rstrip("?.,!")
-    m = (
-        _READ_VERB_RE.match(clean)
-        or _READ_CONTEXT_RE.match(clean)
-        or _READ_WHAT_RE.match(clean)
-    )
-    if not m:
+    raw_parts = clean.split()
+    words = _message_words(clean)
+    node_index = _simple_read_node_index(words)
+    if node_index is None or node_index >= len(raw_parts):
         return None
 
-    node_name = m.group("node").strip().rstrip("?.,!")
+    node_name = raw_parts[node_index].strip().rstrip("?.,!")
     # Require ≥3 chars, no spaces, and at least one structural hint:
     # underscore (GN parameter naming) or initial uppercase (proper node name).
     # This rejects generic lowercase words like "resultado", "tudo", "isso".
@@ -218,6 +210,27 @@ def _try_simple_read(msg: str, runtime: Any) -> tuple[str, dict] | None:
         return None
 
     return result, {"fp_type": "read", "node": node_name}
+
+
+def _simple_read_node_index(words: list[str]) -> int | None:
+    if not words:
+        return None
+    if words[0] in {"mostra", "mostre", "show", "ver", "ve", "veja", "exiba", "exibe"}:
+        index = 1
+        while index < len(words) and words[index] in {"o", "a", "contexto", "do", "da", "de", "no", "na", "node"}:
+            index += 1
+        return index if index == len(words) - 1 else None
+    if words[0] == "contexto":
+        index = 1
+        while index < len(words) and words[index] in {"do", "da", "de", "no", "na", "node"}:
+            index += 1
+        return index if index == len(words) - 1 else None
+    if len(words) >= 4 and words[:3] == ["o", "que", "e"]:
+        index = 3
+        while index < len(words) and words[index] in {"o", "a", "no", "na", "node"}:
+            index += 1
+        return index if index == len(words) - 1 else None
+    return None
 
 
 def _is_fast_path_read_failure(result: Any) -> bool:
@@ -244,29 +257,6 @@ def _is_fast_path_read_failure(result: Any) -> bool:
 # ---------------------------------------------------------------------------
 # Fast path 4: Draft confirmation short-circuit
 # ---------------------------------------------------------------------------
-
-# Same core pattern as _SHORT_CONFIRMATION_RE in drafting.py — kept local to
-# avoid a cross-package import.
-_DRAFT_CONFIRM_RE = re.compile(
-    r"^\s*(pode|sim|ok|claro|manda|vai|bora|yes|sure|go\s+ahead|do\s+it)\s*[!.]?\s*$",
-    re.IGNORECASE,
-)
-
-# Any of these tokens in the message indicate the user is doing more than
-# confirming — new instruction, error report, scene-read request, etc.
-# When present, fall through to the full handler.
-_FP4_DISQUALIFY_RE = re.compile(
-    r"\b("
-    r"mas\b|s[oó]\s+que|depois\s+de|exceto|a\s+n[aã]o\s+ser|"  # new constraint qualifiers
-    r"ajust|muda|troca|corrig|conserta|refina|reescrev|"         # correction verbs
-    r"adicion|inclu|expand|cria|gera|implement|"                 # expansion verbs
-    r"erro|falh|deu\s+errado|n[aã]o\s+deu|nada\s+aconteceu|"   # error reports
-    r"por\s+que|porque|why|o\s+que\s+est|"                      # diagnosis questions
-    r"cena|scene|arvore|[aá]rvore|modifier|objeto"              # scene-read scope
-    r")\b",
-    re.IGNORECASE,
-)
-
 
 def _try_draft_confirmation(msg: str, session: Any) -> tuple[str, dict] | None:
     """FP4: present a pending draft for manual Blender execution.
@@ -296,11 +286,11 @@ def _try_draft_confirmation(msg: str, session: Any) -> tuple[str, dict] | None:
 
     # Message must be a bare short confirmation
     clean = msg.strip()
-    if not _DRAFT_CONFIRM_RE.match(clean):
+    if not _is_bare_confirmation(clean):
         return None
 
     # No disqualifying content (new instructions, errors, scene-read scope)
-    if _FP4_DISQUALIFY_RE.search(clean):
+    if _has_fp4_disqualifier(clean):
         return None
 
     # Draft evidence must exist — otherwise the agent still needs to write it
@@ -338,6 +328,33 @@ def _try_draft_confirmation(msg: str, session: Any) -> tuple[str, dict] | None:
         "block_name": block_name,
         "version": version,
     }
+
+
+def _is_bare_confirmation(message: str) -> bool:
+    words = _message_words(message)
+    return words in (
+        ["pode"], ["sim"], ["ok"], ["claro"], ["manda"], ["vai"], ["bora"],
+        ["yes"], ["sure"], ["go", "ahead"], ["do", "it"],
+    )
+
+
+def _has_fp4_disqualifier(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    return (
+        bool({"mas", "exceto", "erro", "falhou", "porque", "why", "cena", "scene", "arvore", "modifier", "objeto"} & word_set)
+        or _has_phrase(words, "so", "que")
+        or _has_phrase(words, "depois", "de")
+        or _has_phrase(words, "a", "nao", "ser")
+        or _has_prefix(words, "ajust", "muda", "troca", "corrig", "consert", "refina", "reescrev")
+        or _has_prefix(words, "adicion", "inclu", "expand", "cria", "gera", "implement")
+        or _has_prefix(words, "falh")
+        or _has_phrase(words, "deu", "errado")
+        or _has_phrase(words, "nao", "deu")
+        or _has_phrase(words, "nada", "aconteceu")
+        or _has_phrase(words, "por", "que")
+        or _has_phrase(words, "o", "que", "est")
+    )
 
 
 # ---------------------------------------------------------------------------

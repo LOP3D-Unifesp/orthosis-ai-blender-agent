@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,24 @@ _POST_FAILURE_REQUIRED_SECTIONS = (
     "Opcoes",
     "Pergunta",
 )
+
+
+def _message_words(value: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
+    return normalized.split()
+
+
+def _has_prefix(words: list[str], *prefixes: str) -> bool:
+    return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
+
+
+def _has_phrase(words: list[str], *phrase_words: str) -> bool:
+    size = len(phrase_words)
+    if size == 0 or len(words) < size:
+        return False
+    return any(tuple(words[index:index + size]) == phrase_words for index in range(len(words) - size + 1))
 
 
 def _read_draft_info(ctx: TurnContext, block_name: str) -> dict:
@@ -124,18 +144,42 @@ def _read_failed_draft_info(
 
 
 def _analysis_strategy_count(text: str) -> int:
-    body = str(text or "")
-    keyword_count = len(re.findall(r"\b(opcao|option|strategy|estrategia|caminho|strategy\s+[abc]|estrategia\s+[abc])\b", body, re.I))
-    labeled_count = len(re.findall(r"(?im)^\s*(?:[-*]\s*)?(?:strategy|estrategia|opcao|option|caminho)?\s*[ABC123][\).:-]\s+\S+", body))
+    words = _message_words(text)
+    keyword_count = sum(1 for word in words if word in {"opcao", "option", "strategy", "estrategia", "caminho"})
+    labeled_count = 0
+    for line in str(text or "").splitlines():
+        stripped = line.strip().lstrip("-* ").strip()
+        if not stripped:
+            continue
+        first = stripped.split(maxsplit=1)[0].strip(").:-").lower()
+        if first in {"a", "b", "c", "1", "2", "3"}:
+            labeled_count += 1
+            continue
+        parts = _message_words(stripped)
+        if len(parts) >= 2 and parts[0] in {"strategy", "estrategia", "opcao", "option", "caminho"} and parts[1] in {"a", "b", "c", "1", "2", "3"}:
+            labeled_count += 1
     return max(keyword_count, labeled_count)
 
 
 def _analysis_has_diagnosis(text: str) -> bool:
-    return bool(re.search(r"\b(likely failure|falha provavel|provavel|diagn[oó]stico|diagnostico|causa|failed|falhou|errad[oa]|problema)\b", str(text or ""), re.I))
+    words = _message_words(text)
+    return (
+        _has_phrase(words, "likely", "failure")
+        or _has_phrase(words, "falha", "provavel")
+        or _has_prefix(words, "provavel", "diagnostic", "causa", "falhou", "errad", "problem")
+        or "failed" in set(words)
+    )
 
 
 def _analysis_has_failure_reason(text: str) -> bool:
-    return bool(re.search(r"\b(n[aã]o consegui|nao consegui|insuficiente|sem dados|could not|unable|failure reason|motivo)\b", str(text or ""), re.I))
+    words = _message_words(text)
+    return (
+        _has_phrase(words, "nao", "consegui")
+        or _has_phrase(words, "sem", "dados")
+        or _has_phrase(words, "could", "not")
+        or _has_phrase(words, "failure", "reason")
+        or _has_prefix(words, "insuficiente", "unable", "motivo")
+    )
 
 
 def _analysis_is_useful(text: str) -> bool:
@@ -148,18 +192,32 @@ def _analysis_is_useful(text: str) -> bool:
 
 
 def _post_failure_missing_sections(text: str) -> list[str]:
-    body = str(text or "")
+    present = set()
+    required = {section.lower(): section for section in _POST_FAILURE_REQUIRED_SECTIONS}
+    for line in str(text or "").splitlines():
+        head, sep, _tail = line.partition(":")
+        if not sep:
+            continue
+        key = head.strip().lower()
+        if key in required:
+            present.add(required[key])
     missing: list[str] = []
     for section in _POST_FAILURE_REQUIRED_SECTIONS:
-        if not re.search(rf"(?im)^\s*{re.escape(section)}\s*:", body):
+        if section not in present:
             missing.append(section)
     return missing
 
 
 def _post_failure_strategy_count(text: str) -> int:
-    body = str(text or "")
-    labeled = len(re.findall(r"(?im)^\s*(?:[-*]\s*)?[AB][\).:-]\s+\S+", body))
-    return max(labeled, _analysis_strategy_count(body))
+    labeled = 0
+    for line in str(text or "").splitlines():
+        stripped = line.strip().lstrip("-* ").strip()
+        if not stripped:
+            continue
+        first = stripped.split(maxsplit=1)[0].strip(").:-").lower()
+        if first in {"a", "b"}:
+            labeled += 1
+    return max(labeled, _analysis_strategy_count(text))
 
 
 def _post_failure_contract_status(text: str) -> tuple[bool, list[str], int]:
@@ -281,79 +339,198 @@ def _structural_node_index(memory: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return index
 
 
+def _attribute_chain(node: ast.AST) -> list[str]:
+    parts: list[str] = []
+    current: ast.AST | None = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+    return list(reversed(parts))
+
+
+def _is_nodes_expr(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "nodes"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "nodes" or _is_nodes_expr(node.value)
+    return False
+
+
+def _string_constant(node: ast.AST) -> str:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return ""
+
+
+def _subscript_key(node: ast.AST) -> str:
+    return _string_constant(node.slice) if isinstance(node, ast.Subscript) else ""
+
+
+def _is_default_value_target(node: ast.AST) -> bool:
+    if isinstance(node, ast.Attribute) and node.attr == "default_value":
+        return True
+    if isinstance(node, ast.Subscript):
+        return _is_default_value_target(node.value)
+    return False
+
+
 def _extract_failed_draft_static_evidence(content: str, structural_memory: dict[str, Any]) -> dict[str, Any]:
     code = str(content or "")
     alias_to_node: dict[str, str] = {}
     socket_alias_to_node: dict[str, str] = {}
-    for match in re.finditer(
-        r"(?m)^\s*([A-Za-z_]\w*)\s*=\s*(?:nodes|tree\.nodes)\.(?:get|new)\(\s*['\"]([^'\"]+)['\"]",
-        code,
-    ):
-        alias_to_node[match.group(1)] = match.group(2)
-    for match in re.finditer(
-        r"(?m)^\s*([A-Za-z_]\w*)\s*=\s*(?:nodes|tree\.nodes)\[\s*['\"]([^'\"]+)['\"]\s*\]",
-        code,
-    ):
-        alias_to_node[match.group(1)] = match.group(2)
-    for match in re.finditer(
-        r"(?m)^\s*([A-Za-z_]\w*)\s*=\s*[A-Za-z_]\w*(?:socket|input|translation)[A-Za-z_]*\(\s*([A-Za-z_]\w*)\s*\)",
-        code,
-        re.IGNORECASE,
-    ):
-        socket_alias, node_alias = match.group(1), match.group(2)
-        node = alias_to_node.get(node_alias)
-        if node:
-            socket_alias_to_node[socket_alias] = node
-
     referenced_nodes: list[str] = []
-    for pattern in (
-        r"(?:nodes|tree\.nodes)\.get\(\s*['\"]([^'\"]+)['\"]",
-        r"(?:nodes|tree\.nodes)\[\s*['\"]([^'\"]+)['\"]\s*\]",
-    ):
-        for name in re.findall(pattern, code):
-            if name not in referenced_nodes:
-                referenced_nodes.append(name)
-
     socket_writes: list[dict[str, str]] = []
-    for match in re.finditer(
-        r"(?m)([A-Za-z_]\w*)\.inputs\[\s*['\"]([^'\"]+)['\"]\s*\]\.default_value\s*=",
-        code,
-    ):
-        alias, socket = match.group(1), match.group(2)
-        node = alias_to_node.get(alias, alias)
-        socket_writes.append({"node": node, "socket": socket})
-        if node not in referenced_nodes and node != alias:
-            referenced_nodes.append(node)
-    for match in re.finditer(
-        r"(?m)([A-Za-z_]\w*)\.default_value(?:\s*\[\s*\d+\s*\])?\s*=",
-        code,
-    ):
-        socket_alias = match.group(1)
-        node = socket_alias_to_node.get(socket_alias)
-        if not node:
-            continue
-        item = {"node": node, "socket": "Translation"}
-        if item not in socket_writes:
-            socket_writes.append(item)
-        if node not in referenced_nodes:
-            referenced_nodes.append(node)
-
-    default_writes = len(re.findall(r"\.default_value(?:\s*\[\s*\d+\s*\])?\s*=", code))
-    nodes_new = len(re.findall(r"\b(?:nodes|tree\.nodes)\.new\(", code))
-    links_new = len(re.findall(r"\b(?:links|tree\.links)\.new\(", code))
-    links_removed = len(re.findall(r"\b(?:links|tree\.links)\.remove\(", code))
-    node_groups_new = len(re.findall(r"\bbpy\.data\.node_groups\.new\(", code))
-    interface_writes = len(re.findall(r"\b(?:tree\.)?interface\.(?:new_socket|items_tree|remove|move|copy)\b", code))
-    interface_reads = sorted(set(re.findall(r"identifier[\"']?\s*,?\s*(?:None)?\)?\s*==\s*['\"]([^'\"]+)['\"]", code)))
-    if not interface_reads:
-        interface_reads = sorted(set(re.findall(r"identifier[\"']?[^=\n]*==\s*['\"]([^'\"]+)['\"]", code)))
-
     disconnect_targets: list[str] = []
-    for match in re.finditer(r"\bdisconnect_translation\(\s*([A-Za-z_]\w*)\s*\)", code):
-        alias = match.group(1)
-        node = alias_to_node.get(alias, alias)
-        if node not in disconnect_targets:
-            disconnect_targets.append(node)
+    interface_reads: list[str] = []
+    default_writes = 0
+    nodes_new = 0
+    links_new = 0
+    links_removed = 0
+    node_groups_new = 0
+    interface_writes = 0
+
+    def add_unique(items: list[str], value: str) -> None:
+        text = str(value or "").strip()
+        if text and text not in items:
+            items.append(text)
+
+    try:
+        parsed = ast.parse(code)
+    except SyntaxError:
+        parsed = ast.Module(body=[], type_ignores=[])
+
+    class StaticEvidenceVisitor(ast.NodeVisitor):
+        def visit_Assign(self, node: ast.Assign) -> Any:
+            for target in node.targets:
+                self._record_assignment(target, node.value)
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+            if node.value is not None:
+                self._record_assignment(node.target, node.value)
+            self.generic_visit(node)
+
+        def _record_assignment(self, target: ast.AST, value: ast.AST) -> None:
+            nonlocal default_writes
+            if isinstance(target, ast.Name):
+                node_name = self._node_name_from_expr(value)
+                if node_name:
+                    alias_to_node[target.id] = node_name
+                socket_node = self._socket_node_from_expr(value)
+                if socket_node:
+                    socket_alias_to_node[target.id] = socket_node
+            for sub in ast.walk(target):
+                if _is_default_value_target(sub):
+                    default_writes += 1
+                    self._record_default_write(sub)
+                    break
+
+        def visit_Call(self, node: ast.Call) -> Any:
+            nonlocal nodes_new, links_new, links_removed, node_groups_new, interface_writes
+            chain = _attribute_chain(node.func)
+            if isinstance(node.func, ast.Attribute):
+                if node.func.attr == "new" and _is_nodes_expr(node.func.value):
+                    nodes_new += 1
+                elif node.func.attr == "new" and self._is_links_expr(node.func.value):
+                    links_new += 1
+                elif node.func.attr == "remove" and self._is_links_expr(node.func.value):
+                    links_removed += 1
+                elif chain[-4:] == ["bpy", "data", "node_groups", "new"]:
+                    node_groups_new += 1
+                elif node.func.attr in {"new_socket", "remove", "move", "copy"} and self._is_interface_expr(node.func.value):
+                    interface_writes += 1
+            if isinstance(node.func, ast.Name) and node.func.id == "disconnect_translation" and node.args:
+                alias = node.args[0].id if isinstance(node.args[0], ast.Name) else ""
+                add_unique(disconnect_targets, alias_to_node.get(alias, alias))
+            self.generic_visit(node)
+
+        def visit_Compare(self, node: ast.Compare) -> Any:
+            operands = [node.left, *node.comparators]
+            has_identifier = any(
+                self._is_identifier_expr(item)
+                for item in operands
+            )
+            if has_identifier:
+                for item in operands:
+                    add_unique(interface_reads, _string_constant(item))
+            self.generic_visit(node)
+
+        @staticmethod
+        def _is_identifier_expr(node: ast.AST) -> bool:
+            if isinstance(node, ast.Attribute):
+                return node.attr == "identifier"
+            if isinstance(node, ast.Subscript):
+                return _subscript_key(node) == "identifier"
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
+                return len(node.args) >= 2 and _string_constant(node.args[1]) == "identifier"
+            return False
+
+        @staticmethod
+        def _is_links_expr(node: ast.AST) -> bool:
+            if isinstance(node, ast.Name):
+                return node.id == "links"
+            if isinstance(node, ast.Attribute):
+                return node.attr == "links"
+            return False
+
+        @staticmethod
+        def _is_interface_expr(node: ast.AST) -> bool:
+            if isinstance(node, ast.Name):
+                return node.id == "interface"
+            if isinstance(node, ast.Attribute):
+                return node.attr == "interface"
+            return False
+
+        def _node_name_from_expr(self, node: ast.AST) -> str:
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr in {"get", "new"} and _is_nodes_expr(node.func.value) and node.args:
+                    name = _string_constant(node.args[0])
+                    add_unique(referenced_nodes, name)
+                    return name
+            if isinstance(node, ast.Subscript) and _is_nodes_expr(node.value):
+                name = _subscript_key(node)
+                add_unique(referenced_nodes, name)
+                return name
+            return ""
+
+        def _socket_node_from_expr(self, node: ast.AST) -> str:
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or not node.args:
+                return ""
+            func_name = node.func.id.lower()
+            if not any(term in func_name for term in ("socket", "input", "translation")):
+                return ""
+            first = node.args[0]
+            alias = first.id if isinstance(first, ast.Name) else ""
+            return alias_to_node.get(alias, "")
+
+        def _record_default_write(self, node: ast.AST) -> None:
+            target = node
+            while isinstance(target, ast.Subscript):
+                target = target.value
+            if not isinstance(target, ast.Attribute) or target.attr != "default_value":
+                return
+            owner = target.value
+            if isinstance(owner, ast.Subscript) and isinstance(owner.value, ast.Attribute) and owner.value.attr == "inputs":
+                alias_node = owner.value.value
+                alias = alias_node.id if isinstance(alias_node, ast.Name) else ""
+                socket = _subscript_key(owner)
+                node_name = alias_to_node.get(alias, alias)
+                socket_writes.append({"node": node_name, "socket": socket})
+                if node_name and node_name != alias:
+                    add_unique(referenced_nodes, node_name)
+                return
+            if isinstance(owner, ast.Name):
+                node_name = socket_alias_to_node.get(owner.id, "")
+                if node_name:
+                    item = {"node": node_name, "socket": "Translation"}
+                    if item not in socket_writes:
+                        socket_writes.append(item)
+                    add_unique(referenced_nodes, node_name)
+
+    StaticEvidenceVisitor().visit(parsed)
+    interface_reads = sorted(interface_reads)
 
     node_index = _structural_node_index(structural_memory)
     known_names = set(node_index.keys())

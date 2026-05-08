@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -11,77 +11,132 @@ from . import TurnContext
 from .draft_policy import _normalize_draft_goal_mode
 from ..session.schema import DraftedScript
 
-_DIAGNOSE_ONLY_RE = re.compile(
-    r"\b("
-    r"diagnostic|diagnostico|diagn[oó]stico|analis|analisa|analisar|investiga|investigar|"
-    r"estrategia|estratégia|strategy|reflection|reflex[aã]o|reflexao|"
-    r"por\s+que|porque|what\s+is\s+wrong|what's\s+wrong|why|o\s+que\s+esta\s+errado|"
-    r"me\s+explica|explica\s+o\s+problema|qual\s+o\s+problema"
-    r")\b",
-    re.IGNORECASE,
-)
-_FUNCTIONAL_EXPANSION_RE = re.compile(
-    r"\b("
-    r"adicion|inclu|expand|estend|ampli|implement|faz|fazer|cria|criar|gera|gerar|"
-    r"novo\s+recurso|nova\s+fase|nova\s+parte|suporte\s+para|support\s+for|"
-    r"agora\s+quero|tamb[eé]m\s+quero"
-    r")\b",
-    re.IGNORECASE,
-)
-_FOCAL_CORRECTION_RE = re.compile(
-    r"\b("
-    r"corrig|corrige|conserta|ajust|refina|melhor|revis|tenta\s+de\s+novo|retry|"
-    r"preserv|mant[eé]m|sem\s+quebrar|fix|repair|patch|"
-    r"n[aã]o\s+(acontece|acompanha|fica|segue)|nao\s+(acontece|acompanha|fica|segue)|"
-    r"avanca|avança|recua|descola|grudad[oa]s?|colad[oa]s?|face\s+frontal"
-    r")\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_WRITE_RE = re.compile(
-    r"\b("
-    r"corrig|conserta|ajust|refina|melhor|revis|reescrev|edita|atualiz|"
-    r"adicion|inclu|expand|estend|ampli|implement|"
-    r"retarget|rebuild|muda|troca|substitui|escrev|salv|continua|continue"
-    r")\b",
-    re.IGNORECASE,
-)
-_SHORT_CONFIRMATION_RE = re.compile(
-    r"^\s*(pode|sim|ok|claro|manda|vai|bora|yes|sure|go\s+ahead|do\s+it)\s*[!.]?\s*$",
-    re.IGNORECASE,
-)
-_DRAFT_RETRY_REQUEST_RE = re.compile(
-    r"\b("
-    r"consegue\s+tentar|pode\s+tentar|tenta|tentar|refaz|refazer|reescreve|reescrever|"
-    r"consegue\s+seguir|pode\s+seguir|seguir\s+agora|sabe\s+o\s+que\s+precisa\s+fazer|"
-    r"sabe\s+oq\s+precisa\s+fazer|sabe\s+como\s+seguir|de\s+novo|denovo|try\s+again|retry"
-    r")\b",
-    re.IGNORECASE,
-)
-_DRAFT_ACTION_OFFER_RE = re.compile(
-    r"\b(posso|quer|devo|vamos|vou)\b.{0,120}\b(escrever|reescrever|corrigir|ajustar|salvar|gerar|criar)\b.{0,120}\b(draft|script|codigo|revisao)\b",
-    re.IGNORECASE | re.DOTALL,
-)
-_INTENTIONAL_REBUILD_RE = re.compile(
-    r"\b("
-    r"do\s+zero|from\s+scratch|rebuild|reconstru(ir|cao)|reestrutur(ar|a[cç][aã]o)|"
-    r"refazer\s+tudo|reescrever\s+tudo|reorganizar\s+inteir|recriar\s+inteir|"
-    r"pode\s+quebrar|nao\s+precisa\s+preservar|sem\s+preservar"
-    r")\b",
-    re.IGNORECASE,
-)
-_INTENTIONAL_RETARGET_RE = re.compile(
-    r"\b("
-    r"retarget|mudar\s+de\s+arvor|trocar\s+de\s+arvor|outra\s+arvor|novo\s+node\s+group|"
-    r"outro\s+node\s+group|outro\s+modifier|novo\s+modifier|mover\s+para\s+outra\s+arvor|"
-    r"apontar\s+para\s+outra\s+arvor|usar\s+a\s+arvor\s+"
-    r")\b",
-    re.IGNORECASE,
-)
 _VALID_DRAFT_EDIT_MODES = frozenset({
     "preserve_and_refine",
     "intentional_rebuild",
     "intentional_retarget",
 })
+
+
+def _message_words(message: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKD", str(message or "").lower())
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
+    return normalized.split()
+
+
+def _has_prefix(words: list[str], *prefixes: str) -> bool:
+    return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
+
+
+def _has_phrase(words: list[str], *phrase_words: str) -> bool:
+    size = len(phrase_words)
+    if size == 0 or len(words) < size:
+        return False
+    return any(tuple(words[index:index + size]) == phrase_words for index in range(len(words) - size + 1))
+
+
+def _is_short_confirmation(message: str) -> bool:
+    words = _message_words(message)
+    return words in (
+        ["pode"], ["sim"], ["ok"], ["claro"], ["manda"], ["vai"], ["bora"],
+        ["yes"], ["sure"], ["go", "ahead"], ["do", "it"],
+    )
+
+
+def _is_draft_retry_request(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    return (
+        _has_prefix(words, "tenta", "refaz", "reescrev")
+        or bool({"denovo", "retry"} & word_set)
+        or _has_phrase(words, "de", "novo")
+        or _has_phrase(words, "try", "again")
+        or _has_phrase(words, "consegue", "seguir")
+        or _has_phrase(words, "pode", "seguir")
+        or _has_phrase(words, "seguir", "agora")
+        or ("sabe" in word_set and "seguir" in word_set)
+        or ("sabe" in word_set and "fazer" in word_set)
+    )
+
+
+def _has_draft_action_offer(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    return (
+        bool({"posso", "quer", "devo", "vamos", "vou"} & word_set)
+        and _has_prefix(words, "escrev", "reescrev", "corrig", "ajust", "salv", "ger", "cri")
+        and bool({"draft", "script", "codigo", "revisao"} & word_set)
+    )
+
+
+def _is_intentional_rebuild(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    return (
+        "rebuild" in word_set
+        or _has_phrase(words, "do", "zero")
+        or _has_phrase(words, "from", "scratch")
+        or _has_prefix(words, "reconstru", "reestrutur")
+        or (_has_prefix(words, "refaz", "reescrev", "reorganiz", "recri") and "tudo" in word_set)
+        or _has_phrase(words, "pode", "quebrar")
+        or _has_phrase(words, "sem", "preservar")
+        or ("nao" in word_set and "precisa" in word_set and _has_prefix(words, "preserv"))
+    )
+
+
+def _is_intentional_retarget(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    return (
+        "retarget" in word_set
+        or (bool({"mudar", "trocar", "mover", "apontar", "usar"} & word_set) and _has_prefix(words, "arvor"))
+        or (_has_prefix(words, "outr", "nov") and (_has_phrase(words, "node", "group") or "modifier" in word_set))
+    )
+
+
+def _is_diagnose_only_request(message: str) -> bool:
+    words = _message_words(message)
+    return (
+        _has_prefix(words, "diagnostic", "analis", "investig", "estrateg", "reflex")
+        or _has_phrase(words, "por", "que")
+        or "porque" in words
+        or "why" in words
+        or _has_phrase(words, "what", "is", "wrong")
+        or _has_phrase(words, "o", "que", "esta", "errado")
+        or _has_phrase(words, "me", "explica")
+        or _has_phrase(words, "explica", "o", "problema")
+        or _has_phrase(words, "qual", "o", "problema")
+    )
+
+
+def _is_functional_expansion_request(message: str) -> bool:
+    words = _message_words(message)
+    return (
+        _has_prefix(words, "adicion", "inclu", "expand", "estend", "ampli", "implement", "faz", "cri", "ger")
+        or _has_phrase(words, "novo", "recurso")
+        or _has_phrase(words, "nova", "fase")
+        or _has_phrase(words, "nova", "parte")
+        or _has_phrase(words, "suporte", "para")
+        or _has_phrase(words, "support", "for")
+        or _has_phrase(words, "agora", "quero")
+        or _has_phrase(words, "tambem", "quero")
+    )
+
+
+def _is_focal_correction_request(message: str) -> bool:
+    words = _message_words(message)
+    word_set = set(words)
+    negative_motion = "nao" in word_set and bool({"acontece", "acompanha", "fica", "segue"} & word_set)
+    return (
+        _has_prefix(words, "corrig", "consert", "ajust", "refina", "melhor", "revis", "preserv", "mant")
+        or _is_draft_retry_request(message)
+        or bool({"retry", "fix", "repair", "patch"} & word_set)
+        or _has_phrase(words, "sem", "quebrar")
+        or negative_motion
+        or _has_prefix(words, "avanca", "recua", "descola", "grudad", "colad")
+        or _has_phrase(words, "face", "frontal")
+    )
 
 
 def _read_draft_info(ctx: TurnContext, block_name: str) -> dict:
@@ -189,13 +244,13 @@ def _normalize_draft_edit_mode(value: Any) -> str:
 
 
 def _pending_action_instruction(es, session, message: str) -> str:
-    if not (_SHORT_CONFIRMATION_RE.match(message or "") or _DRAFT_RETRY_REQUEST_RE.search(message or "")):
+    if not (_is_short_confirmation(message) or _is_draft_retry_request(message)):
         return ""
     action = str(getattr(es, "pending_draft_action", "") or "").strip()
     prompt = str(getattr(es, "pending_draft_prompt", "") or "").strip()
     if not action:
         last_assistant = _last_assistant_text(session)
-        if _DRAFT_ACTION_OFFER_RE.search(last_assistant):
+        if _has_draft_action_offer(last_assistant):
             action = "write_confirmed_draft_revision"
             prompt = last_assistant[:1200]
     if not action:
@@ -213,7 +268,7 @@ def _pending_action_instruction(es, session, message: str) -> str:
 def _is_economy_retry_turn(es, session, message: str) -> bool:
     if _pending_action_instruction(es, session, message):
         return True
-    if _DRAFT_RETRY_REQUEST_RE.search(message or ""):
+    if _is_draft_retry_request(message):
         return True
     if bool(getattr(es, "retry_requires_draft_change", False)):
         return True
@@ -242,14 +297,14 @@ def _detect_draft_edit_mode_from_source(
 ) -> str:
     stored_mode = _normalize_draft_edit_mode(stored_edit_mode)
     prompt = str(getattr(es, "pending_draft_prompt", "") or "").strip().lower()
-    if _INTENTIONAL_RETARGET_RE.search(str(message or "")):
+    if _is_intentional_retarget(message):
         return "intentional_retarget"
-    if _INTENTIONAL_REBUILD_RE.search(str(message or "")):
+    if _is_intentional_rebuild(message):
         return "intentional_rebuild"
     if "living-draft preservation fix" in prompt or "preserve the existing live node anchors" in prompt:
         return "preserve_and_refine"
     if (
-        (_SHORT_CONFIRMATION_RE.match(message or "") or _DRAFT_RETRY_REQUEST_RE.search(message or ""))
+        (_is_short_confirmation(message) or _is_draft_retry_request(message))
         and (
             str(getattr(es, "pending_draft_action", "") or "").strip()
             or stored_mode != "preserve_and_refine"
@@ -262,8 +317,17 @@ def _detect_draft_edit_mode_from_source(
 
 
 def _message_has_explicit_write_intent(message: str) -> bool:
-    body = str(message or "")
-    return bool(_EXPLICIT_WRITE_RE.search(body) or _SHORT_CONFIRMATION_RE.match(body))
+    words = _message_words(message)
+    return bool(
+        _has_prefix(
+            words,
+            "corrig", "consert", "ajust", "refina", "melhor", "revis",
+            "reescrev", "edita", "atualiz", "adicion", "inclu", "expand",
+            "estend", "ampli", "implement", "retarget", "rebuild", "muda",
+            "troca", "substitui", "escrev", "salv", "continua", "continue",
+        )
+        or _is_short_confirmation(message)
+    )
 
 
 def _detect_draft_goal_mode(es, session, message: str, current_draft_content: str) -> str:
@@ -293,13 +357,13 @@ def _detect_draft_goal_mode_from_source(
             return persisted_mode
         return "focal_correction" if current_draft_content.strip() else "functional_expansion"
     explicit_write = _message_has_explicit_write_intent(body)
-    if _DIAGNOSE_ONLY_RE.search(body) and not explicit_write:
+    if _is_diagnose_only_request(body) and not explicit_write:
         return "diagnose_only"
-    if (_SHORT_CONFIRMATION_RE.match(body) or _DRAFT_RETRY_REQUEST_RE.search(body)) and persisted_mode:
+    if (_is_short_confirmation(body) or _is_draft_retry_request(body)) and persisted_mode:
         if (
             persisted_mode == "functional_expansion"
             and not current_draft_content.strip()
-            and not _INTENTIONAL_REBUILD_RE.search(body)
+            and not _is_intentional_rebuild(body)
         ):
             return "focal_correction"
         return persisted_mode
@@ -309,9 +373,9 @@ def _detect_draft_goal_mode_from_source(
     if outcome in {"executed_no_effect", "executed_failed", "executed_partial_failure", "reverted_by_user"}:
         if current_draft_content.strip():
             return "focal_correction"
-    if _FUNCTIONAL_EXPANSION_RE.search(body) and not _FOCAL_CORRECTION_RE.search(body):
+    if _is_functional_expansion_request(body) and not _is_focal_correction_request(body):
         return "functional_expansion"
-    if _FOCAL_CORRECTION_RE.search(body):
+    if _is_focal_correction_request(body):
         return "focal_correction"
     if explicit_write and current_draft_content.strip():
         return "focal_correction"
@@ -326,7 +390,7 @@ def _store_pending_action_from_response(es, message: str, response: str) -> None
     text = str(response or "").strip()
     if not text:
         return
-    if _DRAFT_ACTION_OFFER_RE.search(text):
+    if _has_draft_action_offer(text):
         es.pending_draft_action = "write_confirmed_draft_revision"
         es.pending_draft_prompt = (
             "User message:\n"
@@ -335,7 +399,7 @@ def _store_pending_action_from_response(es, message: str, response: str) -> None
             f"{text[:1200]}"
         )
         return
-    if not (_SHORT_CONFIRMATION_RE.match(message or "") or _DRAFT_RETRY_REQUEST_RE.search(message or "")):
+    if not (_is_short_confirmation(message) or _is_draft_retry_request(message)):
         es.pending_draft_action = ""
         es.pending_draft_prompt = ""
         es.draft_edit_mode = "preserve_and_refine"

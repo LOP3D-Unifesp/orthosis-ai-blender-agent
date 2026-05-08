@@ -828,6 +828,24 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("missing_live_nodes:MISSING_ORTHOSIS_NODE", result["error"])
         self.assertIsNone(sys.modules["bpy"].data.texts.get("GN_Agent_Draft"))
 
+    def test_draft_live_node_refs_are_extracted_from_python_structure(self):
+        from blender_addon.tools.handlers import _extract_referenced_node_names, _has_geometry_nodes_operations
+
+        code = "\n".join([
+            "nodes = tree.nodes",
+            "PRIMARY = 'ORTHOSIS_CONTEXT'",
+            "EXTRA = ['TF_Falange11', 'TF_Falange12']",
+            "target = nodes.get(PRIMARY)",
+            "for name in EXTRA:",
+            "    node = tree.nodes.get(name)",
+        ])
+
+        self.assertEqual(
+            ["ORTHOSIS_CONTEXT", "TF_Falange11", "TF_Falange12"],
+            _extract_referenced_node_names(code),
+        )
+        self.assertTrue(_has_geometry_nodes_operations(code))
+
     def test_write_script_draft_blocks_when_candidate_drops_existing_live_node_refs(self):
         from blender_addon.tools.handlers import handle_write_script_draft
 

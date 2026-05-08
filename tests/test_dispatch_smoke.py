@@ -32,6 +32,8 @@ class _FakeExecutionState:
     current_draft: Any = None
     pending_user_decision: Any = None
     session_state: str = "IDLE"
+    retry_requires_draft_change: bool = False
+    pending_draft_action: str = ""
 
 
 @dataclass
@@ -111,6 +113,23 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("diagnose_only", goal_mode)
         self.assertEqual("diagnose_only", meta.turn_intent)
         self.assertIn("pending_diagnosis_continuation", meta.signals)
+
+    def test_repair_retry_routes_to_draft_refinement_without_router_regex(self):
+        from blender_addon.core.runtime import AgentRuntime
+        from blender_addon.runtime.router import TurnClass
+
+        session = _FakeSession()
+        session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
+        session.execution_state.session_state = "REPAIRING"
+        session.execution_state.retry_requires_draft_change = True
+        session.execution_state.pending_draft_action = "write_confirmed_draft_revision"
+
+        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(session, "ok tenta denovo")
+
+        self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
+        self.assertEqual("focal_correction", goal_mode)
+        self.assertEqual("draft_refinement", meta.turn_intent)
+        self.assertIn("stateful_retry_request", meta.signals)
 
     def test_workspace_goal_configs_are_the_live_handler_surface(self):
         from blender_addon.handler.workspace import GOAL_CONFIGS

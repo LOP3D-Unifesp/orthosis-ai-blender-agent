@@ -5,6 +5,7 @@ This module is the low-level execution layer used by runtime dispatch.
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import os
@@ -1012,18 +1013,6 @@ def handle_query_node_types(cmd: dict) -> dict:
 _DRAFT_REVISION_RE = re.compile(r"^(?P<base>.+)__rev_(?P<version>\d{6})$")
 _DRAFT_MIN_LINES = 8
 _DRAFT_MIN_CHARS = 300
-_GN_TREE_OP_RE = re.compile(
-    r"(bpy\.data\.node_groups|tree\.nodes|tree\.links|tree\.interface|nodes\.get|nodes\[|modifiers\[)",
-    re.IGNORECASE,
-)
-_GN_NODE_REF_RE = re.compile(
-    r"(?:tree(?:\.nodes)?|nodes)\.get\(\s*['\"](?P<get_name>[^'\"]+)['\"]\s*\)"
-    r"|(?:tree(?:\.nodes)?|nodes)\s*\[\s*['\"](?P<index_name>[^'\"]+)['\"]\s*\]",
-    re.IGNORECASE,
-)
-_GN_NODE_CREATE_RE = re.compile(r"\.nodes\.new\(|nodes\.new\(", re.IGNORECASE)
-
-
 def _is_placeholder_draft(code: str, description: str = "") -> bool:
     text = f"{description}\n{code}".lower()
     return (
@@ -1107,12 +1096,154 @@ def _draft_revision_reject_reason(code: str, description: str = "") -> str:
     return ""
 
 
+def _attribute_chain(node: ast.AST) -> list[str]:
+    parts: list[str] = []
+    current: ast.AST | None = node
+    while isinstance(current, ast.Attribute):
+        parts.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        parts.append(current.id)
+    return list(reversed(parts))
+
+
+def _is_nodes_expr(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "nodes"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "nodes" or _is_nodes_expr(node.value)
+    return False
+
+
+def _has_geometry_nodes_operations(code: str) -> bool:
+    try:
+        parsed = ast.parse(str(code or ""))
+    except SyntaxError:
+        return False
+
+    class GeometryNodesOperationVisitor(ast.NodeVisitor):
+        found = False
+
+        def visit_Attribute(self, node: ast.Attribute) -> Any:
+            chain = _attribute_chain(node)
+            if chain[-3:] == ["bpy", "data", "node_groups"]:
+                self.found = True
+                return
+            if node.attr in {"nodes", "links", "interface"}:
+                self.found = True
+                return
+            self.generic_visit(node)
+
+        def visit_Subscript(self, node: ast.Subscript) -> Any:
+            if _is_nodes_expr(node.value):
+                self.found = True
+                return
+            if isinstance(node.value, ast.Name) and node.value.id == "modifiers":
+                self.found = True
+                return
+            if isinstance(node.value, ast.Attribute) and node.value.attr == "modifiers":
+                self.found = True
+                return
+            self.generic_visit(node)
+
+        def visit_Call(self, node: ast.Call) -> Any:
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in {"get", "new"} and _is_nodes_expr(func.value):
+                self.found = True
+                return
+            self.generic_visit(node)
+
+    visitor = GeometryNodesOperationVisitor()
+    visitor.visit(parsed)
+    return visitor.found
+
+
 def _extract_referenced_node_names(code: str) -> list[str]:
+    try:
+        parsed = ast.parse(str(code or ""))
+    except SyntaxError:
+        return []
+
     names: list[str] = []
-    for match in _GN_NODE_REF_RE.finditer(str(code or "")):
-        name = str(match.group("get_name") or match.group("index_name") or "").strip()
+
+    def add_name(value: str) -> None:
+        name = str(value or "").strip()
         if name and name not in names:
             names.append(name)
+
+    class NodeReferenceVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.bindings: dict[str, list[str]] = {}
+
+        def _resolve_strings(self, node: ast.AST) -> list[str]:
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                return [node.value]
+            if isinstance(node, ast.Name):
+                return list(self.bindings.get(node.id, []))
+            if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+                values: list[str] = []
+                for item in node.elts:
+                    values.extend(self._resolve_strings(item))
+                return values
+            return []
+
+        @staticmethod
+        def _is_nodes_expr(node: ast.AST) -> bool:
+            return _is_nodes_expr(node)
+
+        def _bind_assignment(self, target: ast.AST, value: ast.AST) -> None:
+            if isinstance(target, ast.Name):
+                resolved = self._resolve_strings(value)
+                if resolved:
+                    self.bindings[target.id] = resolved
+
+        def visit_Assign(self, node: ast.Assign) -> Any:
+            for target in node.targets:
+                self._bind_assignment(target, node.value)
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> Any:
+            if node.value is not None:
+                self._bind_assignment(node.target, node.value)
+            self.generic_visit(node)
+
+        def visit_For(self, node: ast.For) -> Any:
+            previous: list[str] | None = None
+            target_name = node.target.id if isinstance(node.target, ast.Name) else ""
+            if target_name:
+                previous = self.bindings.get(target_name)
+                values = self._resolve_strings(node.iter)
+                if values:
+                    self.bindings[target_name] = values
+            for item in node.body:
+                self.visit(item)
+            if target_name:
+                if previous is None:
+                    self.bindings.pop(target_name, None)
+                else:
+                    self.bindings[target_name] = previous
+            for item in node.orelse:
+                self.visit(item)
+
+        def visit_Call(self, node: ast.Call) -> Any:
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "get"
+                and self._is_nodes_expr(func.value)
+                and node.args
+            ):
+                for value in self._resolve_strings(node.args[0]):
+                    add_name(value)
+            self.generic_visit(node)
+
+        def visit_Subscript(self, node: ast.Subscript) -> Any:
+            if self._is_nodes_expr(node.value):
+                for value in self._resolve_strings(node.slice):
+                    add_name(value)
+            self.generic_visit(node)
+
+    NodeReferenceVisitor().visit(parsed)
     return names
 
 
@@ -1326,7 +1457,7 @@ def _draft_domain_reject_reason(code: str, *, tree_name: str = "") -> str:
         if tree is None:
             return f"target_tree_missing:{tree_name}"
 
-        if not _GN_TREE_OP_RE.search(stripped):
+        if not _has_geometry_nodes_operations(stripped):
             return "no_geometry_nodes_operations_detected"
 
         referenced_nodes = _extract_referenced_node_names(stripped)

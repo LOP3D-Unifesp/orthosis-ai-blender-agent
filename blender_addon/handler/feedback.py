@@ -18,7 +18,7 @@ from .feedback_evidence import (
     _read_failed_draft_info,
     _render_failed_draft_evidence_pack,
 )
-from .feedback_classifier import _EXECUTION_DIAGNOSIS_RE, _classify_execution_feedback
+from .feedback_classifier import _classify_execution_feedback, _is_execution_diagnosis_request
 from .prompt import build_post_failure_diagnosis_contract
 from ..runtime.pending_decision import set_pending_decision
 
@@ -111,7 +111,7 @@ def handle(ctx: TurnContext) -> HandlerResult:
     failed_draft_evidence_pack = ""
     wants_diagnosis = (
         outcome in bad_outcomes
-        or bool(_EXECUTION_DIAGNOSIS_RE.search(ctx.message or ""))
+        or _is_execution_diagnosis_request(ctx.message or "")
         or "?" in str(ctx.message or "")
     )
     if wants_diagnosis:

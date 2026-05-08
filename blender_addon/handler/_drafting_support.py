@@ -82,40 +82,6 @@ from .feedback_evidence import (
 )
 from .feedback_classifier import _classify_execution_feedback
 
-_DIAGNOSE_ONLY_RE = re.compile(
-    r"\b("
-    r"diagnostic|diagnostico|diagn[oó]stico|analis|analisa|analisar|investiga|investigar|"
-    r"estrategia|estratégia|strategy|reflection|reflex[aã]o|reflexao|"
-    r"por\s+que|porque|what\s+is\s+wrong|what's\s+wrong|why|o\s+que\s+esta\s+errado|"
-    r"me\s+explica|explica\s+o\s+problema|qual\s+o\s+problema"
-    r")\b",
-    re.IGNORECASE,
-)
-_FUNCTIONAL_EXPANSION_RE = re.compile(
-    r"\b("
-    r"adicion|inclu|expand|estend|ampli|implement|faz|fazer|cria|criar|gera|gerar|"
-    r"novo\s+recurso|nova\s+fase|nova\s+parte|suporte\s+para|support\s+for|"
-    r"agora\s+quero|tamb[eé]m\s+quero"
-    r")\b",
-    re.IGNORECASE,
-)
-_FOCAL_CORRECTION_RE = re.compile(
-    r"\b("
-    r"corrig|corrige|conserta|ajust|refina|melhor|revis|tenta\s+de\s+novo|retry|"
-    r"preserv|mant[eé]m|sem\s+quebrar|fix|repair|patch|"
-    r"n[aã]o\s+(acontece|acompanha|fica|segue)|nao\s+(acontece|acompanha|fica|segue)|"
-    r"avanca|avança|recua|descola|grudad[oa]s?|colad[oa]s?|face\s+frontal"
-    r")\b",
-    re.IGNORECASE,
-)
-_EXPLICIT_WRITE_RE = re.compile(
-    r"\b("
-    r"corrig|conserta|ajust|refina|melhor|revis|reescrev|edita|atualiz|"
-    r"adicion|inclu|expand|estend|ampli|implement|"
-    r"retarget|rebuild|muda|troca|substitui|escrev|salv|continua|continue"
-    r")\b",
-    re.IGNORECASE,
-)
 _VALID_DRAFT_GOAL_MODES = {"diagnose_only", "focal_correction", "functional_expansion", "feedback_fix"}
 
 def _handle_missing_retry_draft_source(ctx: TurnContext, state: DraftWorkspacePipelineState) -> HandlerResult | None:

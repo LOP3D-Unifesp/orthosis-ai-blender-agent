@@ -63,19 +63,6 @@ USE_STRUCTURED_SESSION_V1 = bool(int(os.environ.get("ORTHOSIS_USE_STRUCTURED_SES
 
 
 
-def load_structured_session_v1(project_root: "Path", blend_path: str = ""):
-    """Phase 1 helper: load a v1 ``Session`` for ``blend_path``.
-
-    Imported lazily so that turning the feature off has zero import cost on
-    the live runtime path. Returns a ``Session`` object from
-    ``blender_addon.session``.
-    """
-    from ..session import SessionV1Store
-
-    return SessionV1Store(project_root=project_root).load(blend_path)
-
-
-
 def _resolve_runtime_project_root(project_root: str | Path) -> Path:
     """Best-effort project root resolution for runtime knowledge availability."""
     try:

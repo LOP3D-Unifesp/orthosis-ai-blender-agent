@@ -20,8 +20,6 @@ MAX_MEMORY_NODES = 40
 MAX_MEMORY_PARAMS = 24
 MAX_TREE_MARKERS = 8
 MAX_TREE_STRUCTURAL_MEMORIES = 8
-MAX_CHAT_HISTORY = 80
-MAX_CHAT_TEXT = 20000
 
 
 # ---------------------------------------------------------------------------
@@ -95,10 +93,6 @@ def get_session_memory(state: dict[str, Any]) -> dict[str, Any]:
 
 def update_scene_summary(state: dict[str, Any], summary: dict[str, Any]) -> None:
     state["last_scene_summary"] = summary or {}
-
-
-def update_gn_summary(state: dict[str, Any], summary: dict[str, Any]) -> None:
-    state["last_gn_summary"] = summary or {}
 
 
 # ---------------------------------------------------------------------------
@@ -222,20 +216,6 @@ def update_session_memory(
 # ---------------------------------------------------------------------------
 # Structural index / change markers
 # ---------------------------------------------------------------------------
-
-def update_structural_index(
-    state: dict[str, Any],
-    tree_name: str,
-    index_entry: dict[str, Any],
-) -> None:
-    if not tree_name or not isinstance(index_entry, dict):
-        return
-    index = state.get("structural_index")
-    if not isinstance(index, dict):
-        index = {}
-    index[tree_name] = index_entry
-    state["structural_index"] = index
-
 
 def update_tree_structural_memory(
     state: dict[str, Any],
@@ -385,24 +365,6 @@ def begin_new_session(state: dict[str, Any]) -> None:
     state["last_target_tree"] = ""
     state["chat_history"] = []
     reset_session_memory(state)
-
-
-def append_chat_history(state: dict[str, Any], *, role: str, text: str) -> None:
-    role_name = str(role or "").strip().lower()
-    if role_name not in {"user", "assistant", "system"}:
-        return
-    content = str(text or "")
-    if not content.strip():
-        return
-    history = state.get("chat_history")
-    if not isinstance(history, list):
-        history = []
-    history.append({
-        "role": role_name,
-        "text": content[:MAX_CHAT_TEXT],
-        "timestamp": _utc_now_iso(),
-    })
-    state["chat_history"] = history[-MAX_CHAT_HISTORY:]
 
 
 def clear_chat_history(state: dict[str, Any]) -> None:

@@ -14,7 +14,6 @@ from typing import Any
 from ..project_paths import resolve_project_root
 from ..runtime_planning import (
     FOCAL_READ_TOOLS,
-    build_structural_index_entry,
     extract_node_name,
     extract_tree_name,
 )
@@ -1695,10 +1694,6 @@ class AgentRuntime:
     def _extract_node_name(tool_input: dict[str, Any]) -> str:
         return extract_node_name(tool_input)
 
-    @staticmethod
-    def _build_structural_index_entry(tree_payload: dict[str, Any]) -> dict[str, Any]:
-        return build_structural_index_entry(tree_payload)
-
     def _handle_stale_local_scope_tool_failure(self, tool_name: str, result: str) -> str:
         self._local_scope = {}
         state = self._session_state if isinstance(self._session_state, dict) else {}
@@ -1978,33 +1973,6 @@ class AgentRuntime:
             except Exception:
                 pass
         return normalized
-
-    def _load_knowledge_snippet(self, rel_path: Path, *, max_chars: int) -> str:
-        return load_knowledge_snippet(self.project_root, rel_path, max_chars=max_chars)
-
-    def _recent_messages(self, last_n: int = 12) -> list[dict[str, Any]]:
-        if len(self._messages) <= last_n:
-            return list(self._messages)
-        return list(self._messages[-last_n:])
-
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        return max(1, len(text) // 4)
-
-    def _build_target_summary(self) -> dict[str, str]:
-        canonical = self._canonical_gn_target if isinstance(self._canonical_gn_target, dict) else {}
-        if canonical:
-            return {
-                "object": str(canonical.get("object") or "").strip() or "(not set)",
-                "modifier": str(canonical.get("modifier") or "").strip() or "(not set)",
-                "node_group": str(canonical.get("tree_name") or "").strip() or "(not set)",
-            }
-        focus = getattr(self._active_v1_session, "focus", None)
-        return {
-            "object": str(getattr(focus, "object_name", "") or "").strip() or "(not set)",
-            "modifier": str(getattr(focus, "modifier_name", "") or "").strip() or "(not set)",
-            "node_group": str(getattr(focus, "tree_name", "") or "").strip() or "(not set)",
-        }
 
     def _log_session_memory_used(self, *, reason: str, keys: list[str], **extra: Any) -> None:
         normalized_reason = str(reason or "").strip()

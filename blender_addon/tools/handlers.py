@@ -1356,15 +1356,6 @@ def _draft_revision_validity(text_block: Any) -> str:
     return _infer_draft_revision_validity(text_block.as_string(), description)
 
 
-def _draft_revision_candidates(block_name: str) -> list[Any]:
-    candidates: list[Any] = []
-    main = bpy.data.texts.get(block_name)
-    if main is not None:
-        candidates.append(main)
-    candidates.extend(_draft_revision_blocks(block_name))
-    return candidates
-
-
 def _latest_draft_block(block_name: str) -> Any | None:
     main = bpy.data.texts.get(block_name)
     if main is not None:

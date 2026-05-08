@@ -317,21 +317,6 @@ def _get_execution_phase(runtime: AgentRuntime, blend_path: str) -> str:
     return _get_execution_phase_helper(str(runtime.project_root), blend_path)
 
 
-def _simple_session_state(runtime_info: dict) -> str:
-    declared = str(runtime_info.get("session_state", "") or "").strip()
-    if declared in {"no_session", "active", "paused"}:
-        return declared
-    active = bool(runtime_info.get("agent_session_active", False))
-    if not active:
-        return "no_session"
-    if SESSION.running:
-        return "active"
-    if int(runtime_info.get("turn_counter", 0) or 0) <= 0:
-        return "active"
-    return "paused"
-
-
-
 def _sync_ui_messages_from_session(runtime_info: dict) -> None:
     session_id = str(runtime_info.get("session_id", "") or "")
     history = runtime_info.get("chat_history", [])

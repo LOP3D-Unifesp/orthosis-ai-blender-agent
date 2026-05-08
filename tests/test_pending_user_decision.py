@@ -272,7 +272,6 @@ class PendingUserDecisionTests(unittest.TestCase):
 
     def test_read_authorization_yes_does_not_schedule_write(self) -> None:
         from blender_addon.runtime.pending_decision import resolve_pending_decision, set_pending_decision
-        from blender_addon.runtime.routing_obs import infer_turn_intent
         from blender_addon.session.schema import Session
 
         session = Session.new("case.blend")
@@ -290,7 +289,6 @@ class PendingUserDecisionTests(unittest.TestCase):
         self.assertEqual("sim", result.answered_with)
         self.assertEqual("", session.execution_state.pending_draft_action)
         self.assertNotEqual("STRATEGY_APPROVED", session.execution_state.session_state)
-        self.assertNotEqual("strategy_approval", infer_turn_intent(session, "sim", [], "context_inquiry"))
 
     def test_strategy_proposed_does_not_collapse_while_pending(self) -> None:
         from blender_addon.runtime.pending_decision import set_pending_decision

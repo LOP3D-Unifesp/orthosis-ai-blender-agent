@@ -240,16 +240,6 @@ class RepairConversationLoopTests(unittest.TestCase):
 class RouterRepairingStateTests(unittest.TestCase):
     """Router correctly handles write approval signals in REPAIRING state."""
 
-    def _session_repairing(self):
-        from blender_addon.session.schema import Session
-
-        session = Session.new("case.blend")
-        session.execution_state.session_state = "REPAIRING"
-        session.execution_state.draft_revision = 47
-        # Snapshot was restored — no live draft object, but state is REPAIRING
-        session.execution_state.current_draft = None
-        return session
-
 class InquiryMaxRoundsTests(unittest.TestCase):
     """_inquiry_max_rounds_for_state bumps rounds correctly in repair states."""
 

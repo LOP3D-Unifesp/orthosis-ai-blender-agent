@@ -56,34 +56,6 @@ def _extract_node_name(tool_input: dict[str, Any]) -> str:
     return ""
 
 
-def _build_structural_index(tree_payload: dict[str, Any], *, dispatcher: RuntimeDispatcher) -> dict[str, Any]:
-    nodes = tree_payload.get("nodes", []) if isinstance(tree_payload.get("nodes"), list) else []
-    links = tree_payload.get("links", []) if isinstance(tree_payload.get("links"), list) else []
-    interface = tree_payload.get("interface", {}) if isinstance(tree_payload.get("interface"), dict) else {}
-
-    frames = [str(node.get("name", "")) for node in nodes if isinstance(node, dict) and node.get("type") == "NodeFrame"]
-    group_nodes = [
-        str(node.get("name", ""))
-        for node in nodes
-        if isinstance(node, dict) and str(node.get("type", "")).lower() in {"geometrynodegroup", "nodegroup"}
-    ]
-    key_nodes = [str(node.get("name", "")) for node in nodes if isinstance(node, dict)][:40]
-    params: list[str] = []
-    if isinstance(interface.get("inputs"), list):
-        params = [str(inp.get("name", "")) for inp in interface.get("inputs", []) if isinstance(inp, dict)]
-    return {
-        "tree_name": str(tree_payload.get("name", "")),
-        "node_count": int(tree_payload.get("node_count", len(nodes)) or 0),
-        "link_count": len(links),
-        "frames": [name for name in frames if name],
-        "group_nodes": [name for name in group_nodes if name],
-        "key_nodes": [name for name in key_nodes if name],
-        "known_parameters": [name for name in params if name],
-        "tree_hash": dispatcher._tree_hash(tree_payload),
-        "updated_at": int(time.time()),
-    }
-
-
 def _state_focus_tree_name(state: dict[str, Any]) -> str:
     session_memory = state.get("session_memory") if isinstance(state.get("session_memory"), dict) else {}
     local_scope = state.get("local_scope") if isinstance(state.get("local_scope"), dict) else {}
@@ -94,34 +66,6 @@ def _state_focus_tree_name(state: dict[str, Any]) -> str:
         or ""
     )
     return str(tree_name or "").strip()
-
-
-def _known_parameters_from_state(state: dict[str, Any]) -> dict[str, Any]:
-    known_parameters: dict[str, Any] = {}
-    session_memory = state.get("session_memory") if isinstance(state.get("session_memory"), dict) else {}
-    raw_changes = session_memory.get("last_parameter_changes")
-    if not isinstance(raw_changes, list):
-        return known_parameters
-    for change in raw_changes:
-        if not isinstance(change, dict):
-            continue
-        node_name = str(change.get("node") or change.get("name") or "").strip()
-        if not node_name:
-            continue
-        known_parameters[node_name] = {
-            "field": str(change.get("field") or ""),
-            "value": change.get("value"),
-            "source": "runtime_sync",
-        }
-    return known_parameters
-
-
-def _open_questions_from_state(state: dict[str, Any]) -> list[str]:
-    session_memory = state.get("session_memory") if isinstance(state.get("session_memory"), dict) else {}
-    last_hypothesis = str(session_memory.get("last_hypothesis") or "").strip()
-    if not last_hypothesis:
-        return []
-    return [f"hypothesis_to_revisit: {last_hypothesis[:200]}"]
 
 
 def _phase_from_state(state: dict[str, Any]) -> str:
@@ -316,52 +260,12 @@ class Runtime:
             except Exception:
                 pass
 
-    def reattach_session(self, old_blend_path: str | None, new_blend_path: str | None) -> Path | None:
-        """Rebind a persisted session from one blend path to another."""
-        return self._get_v1_store().reattach_session(
-            self._resolve_blend_path(old_blend_path),
-            self._resolve_blend_path(new_blend_path),
-        )
-
     def reattach_session_result(self, old_blend_path: str | None, new_blend_path: str | None) -> dict[str, Any]:
         """Return an explicit reattach outcome for save/save-as handling."""
         return self._get_v1_store().reattach_session_result(
             self._resolve_blend_path(old_blend_path),
             self._resolve_blend_path(new_blend_path),
         )
-
-    def diagnose_v1_session(self, blend_path: str | None = None) -> dict[str, Any]:
-        """Return a diagnostic view of the active V1 session and sibling candidates."""
-        resolved = self._resolve_blend_path(blend_path)
-        return self._get_v1_store().diagnose_v1_session(resolved)
-
-    def archive_and_reset_session(self, blend_path: str | None = None) -> dict[str, Any]:
-        """Explicitly archive the current V1 session file and replace it with a clean one."""
-        resolved = self._resolve_blend_path(blend_path)
-        result = self._get_v1_store().archive_and_reset_v1_session(resolved)
-        new_session_id = str(result.get("new_session_id") or "")
-        if new_session_id:
-            self._start_journal_session(new_session_id, blend_file=resolved)
-        try:
-            self.journal.log_runtime_event(
-                event_type="session_archived_and_reset",
-                payload={
-                    "blend_path": resolved,
-                    "current_session_file": str(result.get("current_session_file") or ""),
-                    "archive_file": str(result.get("archive_file") or ""),
-                    "archived": bool(result.get("archived", False)),
-                    "new_session_id": new_session_id,
-                    "prior_session_id": str(
-                        (result.get("archived_session") or {}).get("session_id", "")
-                        if isinstance(result.get("archived_session"), dict)
-                        else ""
-                    ),
-                },
-                status="success",
-            )
-        except Exception:
-            pass
-        return result
 
     def _apply_runtime_state_to_v1_session(self, session: Any, legacy_state: dict[str, Any], *, blend_path: str) -> None:
         object_name = session.focus.object_name

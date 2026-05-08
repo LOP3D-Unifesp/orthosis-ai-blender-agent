@@ -17,7 +17,6 @@ import hashlib
 import json
 import os
 import time
-from datetime import datetime, timezone
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -87,11 +86,6 @@ class SessionV1Store:
 
     def _legacy_dir(self) -> Path:
         return self.project_root / "runtime" / LEGACY_SUBDIR
-
-    def _archive_dir(self) -> Path:
-        path = self._v1_dir() / "archive"
-        path.mkdir(parents=True, exist_ok=True)
-        return path
 
     def _quarantine_dir(self) -> Path:
         path = self._v1_dir() / "archive" / "quarantine"
@@ -226,68 +220,6 @@ class SessionV1Store:
     def import_legacy_sessions_explicit(self, blend_path: str = "") -> list[Path]:
         """No-op: v1→v2 migration completed. Kept for API compat."""
         return []
-
-    def diagnose_v1_session(self, blend_path: str = "") -> dict[str, Any]:
-        """Describe the current V1 session, sibling candidates, and archives."""
-        current_path = self.v1_path(blend_path)
-        current_info = self._describe_session_file(current_path, current=True)
-        candidates = self._candidate_v1_sessions(blend_path, include_archive=False)
-        archives = self._candidate_v1_sessions(blend_path, include_archive=True)
-        return {
-            "blend_path": str(blend_path or ""),
-            "current": current_info,
-            "candidates": candidates,
-            "archive": {
-                "exists": bool(archives),
-                "files": archives,
-            },
-        }
-
-    def archive_and_reset_v1_session(self, blend_path: str = "") -> dict[str, Any]:
-        """Archive the current V1 session file and replace it with a new empty one.
-
-        This operation is explicit and never imports legacy artifacts. The old
-        file is moved into ``runtime/sessions_v1/archive`` with a timestamped
-        name; the active path then receives a brand-new empty session bound to
-        the same ``blend_path``.
-        """
-        effective_blend = str(blend_path or "").strip()
-        current_path = self.v1_path(effective_blend)
-        archive_path = None
-        archived = False
-        archived_summary: dict[str, Any] | None = None
-        previous_session_id = ""
-
-        if current_path.exists():
-            archived_summary = self._describe_session_file(current_path, current=True)
-            previous_session_id = str(archived_summary.get("session_id") or "")
-            archive_path = self._archive_destination_for(current_path)
-            current_path.replace(archive_path)
-            archived = True
-            _diag("store.reset", f"ARCHIVED current={current_path} archive={archive_path}")
-        else:
-            _diag("store.reset", f"ARCHIVE skipped current_missing={current_path}")
-
-        session = Session.new(blend_path=effective_blend)
-        session.lifecycle.add_note(
-            "session_archived_and_reset"
-            if archived
-            else "session_reset_without_existing_v1"
-        )
-        if archived and previous_session_id:
-            session.lifecycle.remember_prior_session(previous_session_id)
-            session.lifecycle.add_note(f"archived_previous_session_id:{previous_session_id}")
-        saved_path = self.save(session, effective_blend)
-        _diag("store.reset", f"RESET new_session_file={saved_path}")
-        return {
-            "blend_path": effective_blend,
-            "status": "archived_and_reset" if archived else "created_fresh",
-            "current_session_file": str(saved_path),
-            "archive_file": str(archive_path) if archive_path else "",
-            "archived": archived,
-            "archived_session": archived_summary,
-            "new_session_id": str(session.identity.session_id or ""),
-        }
 
     def _find_session_by_blend_path(self, blend_path: str) -> "Session | None":
         """Scan sessions_v1 for any session whose focus.blend_path matches.
@@ -487,118 +419,11 @@ class SessionV1Store:
             "saved_path": str(saved_path),
         }
 
-    def reattach_session(self, old_blend_path: str = "", new_blend_path: str = "") -> Path | None:
-        """Move the current session binding from *old_blend_path* to *new_blend_path*.
-
-        This is used for:
-        - first save of an unsaved .blend (temporary session -> saved file)
-        - Save As to a new path (existing file session -> new file identity)
-
-        The move is intentionally conservative: if the target session file
-        already exists, this method does nothing rather than overwriting it.
-        """
-        result = self.reattach_session_result(old_blend_path, new_blend_path)
-        if str(result.get("status") or "") != "reattached":
-            return None
-        saved_path = str(result.get("saved_path") or "").strip()
-        return Path(saved_path) if saved_path else None
-
     def has_v1_file(self, blend_path: str = "") -> bool:
         return self.v1_path(blend_path).exists()
 
     def has_legacy_file(self) -> bool:
         return self.legacy_path().exists()
-
-    # ---- diagnostics / archive helpers ----------------------------------
-
-    def _candidate_v1_sessions(self, blend_path: str, *, include_archive: bool) -> list[dict[str, Any]]:
-        if not blend_path:
-            return []
-        roots = [self._archive_dir()] if include_archive else [self._v1_dir()]
-        current_name = self.v1_path(blend_path).name
-        try:
-            target = Path(blend_path).resolve().as_posix().lower()
-        except Exception:
-            return []
-
-        matches: list[dict[str, Any]] = []
-        for root in roots:
-            try:
-                for path in root.glob("*.json"):
-                    if not include_archive and path.name in {current_name, SESSION_FILENAME}:
-                        continue
-                    payload = _read_json(path)
-                    if not isinstance(payload, dict):
-                        continue
-                    focus = payload.get("focus", {}) if isinstance(payload.get("focus"), dict) else {}
-                    saved = str(focus.get("blend_path", "") or "").strip()
-                    if not saved:
-                        continue
-                    try:
-                        normalized = Path(saved).resolve().as_posix().lower()
-                    except Exception:
-                        normalized = saved.replace("\\", "/").lower()
-                    if normalized != target:
-                        continue
-                    matches.append(self._describe_session_file(path, current=False))
-            except Exception:
-                continue
-        matches.sort(key=lambda item: str(item.get("mtime", "") or ""), reverse=True)
-        return matches
-
-    def _archive_destination_for(self, current_path: Path) -> Path:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        archive_dir = self._archive_dir()
-        stem = current_path.stem
-        suffix = current_path.suffix or ".json"
-        candidate = archive_dir / f"{stem}__archived_{stamp}{suffix}"
-        counter = 2
-        while candidate.exists():
-            candidate = archive_dir / f"{stem}__archived_{stamp}_{counter}{suffix}"
-            counter += 1
-        return candidate
-
-    def _describe_session_file(self, path: Path, *, current: bool) -> dict[str, Any]:
-        payload = _read_json(path)
-        summary: dict[str, Any] = {
-            "path": str(path),
-            "exists": path.exists(),
-            "current": bool(current),
-            "session_id": "",
-            "blend_path": "",
-            "msg_count": 0,
-            "first": "",
-            "last": "",
-            "mtime": "",
-            "invalid": False,
-        }
-        if path.exists():
-            try:
-                summary["mtime"] = datetime.fromtimestamp(
-                    path.stat().st_mtime,
-                    tz=timezone.utc,
-                ).replace(microsecond=0).isoformat()
-            except Exception:
-                summary["mtime"] = ""
-        if not isinstance(payload, dict):
-            summary["invalid"] = bool(path.exists())
-            return summary
-
-        identity = payload.get("identity", {}) if isinstance(payload.get("identity"), dict) else {}
-        focus = payload.get("focus", {}) if isinstance(payload.get("focus"), dict) else {}
-        history = payload.get("history", {}) if isinstance(payload.get("history"), dict) else {}
-        messages = history.get("messages", []) if isinstance(history.get("messages"), list) else []
-        first = messages[0] if messages else {}
-        last = messages[-1] if messages else {}
-
-        summary.update({
-            "session_id": str(identity.get("session_id", "") or ""),
-            "blend_path": str(focus.get("blend_path", "") or ""),
-            "msg_count": len(messages),
-            "first": str(first.get("content", "") or "")[:160] if isinstance(first, dict) else "",
-            "last": str(last.get("content", "") or "")[:160] if isinstance(last, dict) else "",
-        })
-        return summary
 
 
 # ---------------------------------------------------------------------------

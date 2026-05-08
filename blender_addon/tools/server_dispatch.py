@@ -387,59 +387,11 @@ class SkillRouter:
             "screenshot_recs": report.get("screenshot_recs", [])[:3],
         }
 
-    def _compact_gn_report(self, report: dict[str, Any]) -> dict[str, Any]:
-        structural_flags = report.get("structural_flags", [])
-        return {
-            "schema_version": report.get("schema_version"),
-            "context_id": report.get("context_id"),
-            "query_used": report.get("query_used"),
-            "gn_host_count": len(report.get("gn_hosts", [])),
-            "domain_hypotheses": report.get("domain_hypotheses", [])[:8],
-            "tree_summaries": [
-                {
-                    "group_name": t.get("group_name"),
-                    "node_count": t.get("node_count", 0),
-                    "link_count": t.get("link_count", 0),
-                    "structural_warnings": t.get("structural_warnings", [])[:4],
-                }
-                for t in report.get("node_trees", [])[:8]
-            ],
-            "structural_flags": structural_flags[:12],
-            "high_severity_flag_count": len([f for f in structural_flags if f.get("severity") == "high"]),
-            "visual_capture_recommendations": report.get("visual_capture_recommendations", [])[:3],
-            "follow_up_inspection_suggestions": report.get("follow_up_inspection_suggestions", [])[:5],
-        }
-
 
 def _json_error(message: str, **extra: Any) -> dict[str, Any]:
     payload = {"status": "error", "error": message}
     payload.update(extra)
     return payload
-
-
-def _parse_value(value: Any):
-    if not isinstance(value, str):
-        return value
-    raw = value.strip()
-    if raw.lower() == "true":
-        return True
-    if raw.lower() == "false":
-        return False
-    if raw.startswith("[") or raw.startswith("{"):
-        try:
-            return json.loads(raw)
-        except json.JSONDecodeError:
-            pass
-    try:
-        if "." not in raw:
-            return int(raw)
-    except ValueError:
-        pass
-    try:
-        return float(raw)
-    except ValueError:
-        pass
-    return raw
 
 
 class RuntimeDispatcher:
@@ -589,10 +541,6 @@ class RuntimeDispatcher:
 
     def _tool_read_script_draft(self, tool_input, **_):
         return handlers.handle_read_script_draft(tool_input)
-
-    def _invalidate_tree_cache(self, tree_name: str) -> None:
-        if tree_name:
-            self._gn_analysis_cache.pop(tree_name, None)
 
     @staticmethod
     def _tree_hash(tree_data: dict[str, Any]) -> str:
@@ -2076,31 +2024,6 @@ class RuntimeDispatcher:
             "warnings": warnings,
         }
         return {"status": "success", "result": result}
-
-    def _anatomy_region_kind(self, region: dict[str, Any]) -> tuple[str, list[str]]:
-        anatomy = {
-            "forearm": ("forearm", "antebraco", "antebraço", "radius", "ulna", "radio", "rádio"),
-            "wrist": ("wrist", "punho"),
-            "palm": ("palm", "palma"),
-            "metacarpals": ("metacarp", "metacarpo"),
-            "thumb": ("thumb", "polegar"),
-            "phalanges": ("phalange", "falange", "finger", "dedo"),
-            "hand": ("hand", "mao", "mão"),
-        }
-        text = self._tokenize_semantic_text(
-            region.get("name"),
-            region.get("label"),
-            region.get("probable_function"),
-            " ".join(str(n) for n in region.get("key_nodes", []) if str(n).strip()),
-        )
-        best = "unknown"
-        best_hits: list[str] = []
-        for kind, kws in anatomy.items():
-            hits = self._match_keywords(text, kws)
-            if len(hits) > len(best_hits):
-                best = kind
-                best_hits = hits
-        return best, best_hits
 
     def build_tree_marker(self, tree_payload: dict[str, Any]) -> dict[str, Any]:
         nodes = tree_payload.get("nodes", []) if isinstance(tree_payload, dict) else []

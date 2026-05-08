@@ -16,37 +16,15 @@ Phase 8 changes vs Phase 7:
 
 from __future__ import annotations
 
-import os
-import re
-import site
-import sys
-import threading
-import time
-import traceback
-from contextlib import redirect_stdout
-from io import StringIO
-from pathlib import Path
-
 import bpy
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None
-
-from ..core.runtime import AgentRuntime
 from ..project_paths import resolve_project_root
-from ..tools import call_blender_socket
-from .. import get_effective_blend_path as _get_effective_blend_path
 from .chat_session import SESSION
 from .screenshot import CHAT_OT_AttachScreenshot
 from .advanced import ADVANCED_CLASSES
 from ._helpers import (
-    _estimate_wrap_width,
     _wrap_text,
-    _normalize_multiline_text,
     _PHASE_LABELS,
-    _get_execution_phase as _get_execution_phase_helper,
 )
 
 

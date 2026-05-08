@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import os
-import re
 import site
 import sys
 import threading
 import time
-import traceback
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
 
 import bpy
@@ -491,11 +486,6 @@ def _sync_scene_controls_from_runtime(scene, runtime_info: dict) -> None:
     except Exception:
         pass
 
-
-# ---------------------------------------------------------------------------
-# Workspace helpers
-# ---------------------------------------------------------------------------
-from .panel_workspace import _build_file_context_blocks
 
 # Operators
 # ---------------------------------------------------------------------------

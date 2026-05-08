@@ -99,10 +99,6 @@ def classify_safety_level(tool_name: str, tool_input: dict[str, Any] | None = No
     return "auto_apply"
 
 
-def is_mutation_tool(tool_name: str) -> bool:
-    return tool_name in CONFIRM_THEN_APPLY_TOOLS or tool_name in EXPLICIT_OVERRIDE_TOOLS
-
-
 def evaluate_tool_call(
     tool_name: str,
     ctx: SafetyContext,

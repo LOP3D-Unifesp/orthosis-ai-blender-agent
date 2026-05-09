@@ -30,7 +30,6 @@ import json
 import time
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from ..operation_journal import OperationJournal
 from ..tools.server_dispatch import RuntimeDispatcher
@@ -568,187 +567,34 @@ class Runtime:
         return source or "mcp"
 
     @staticmethod
-    def _new_plan_id() -> str:
-        return f"plan-{uuid4().hex[:10]}"
-
-    @staticmethod
-    def _new_approval_token() -> str:
-        return f"appr-{uuid4().hex[:12]}"
-
-    @staticmethod
     def _detect_state_inconsistencies(state: dict[str, Any]) -> list[str]:
-        issues: list[str] = []
-        plan_id = str(state.get("current_plan_id", "") or "").strip()
-        plan_status = str(state.get("current_plan_status", "none") or "none")
-        approval_required = bool(state.get("approval_required", False))
-        approval_status = str(state.get("approval_status", "none") or "none")
-        approval_token = str(state.get("approval_token", "") or "").strip()
-        stages = state.get("presented_plan_stages", []) if isinstance(state.get("presented_plan_stages"), list) else []
-        raw_stage_idx = state.get("current_stage_index", -1)
-        try:
-            stage_idx = int(raw_stage_idx)
-        except Exception:
-            stage_idx = -1
-
-        if approval_required and (not plan_id or not approval_token):
-            issues.append("approval_required_missing_plan_or_token")
-        if approval_status == "granted" and plan_status not in {"approved", "executing", "completed"}:
-            issues.append("approval_granted_with_invalid_plan_status")
-        if plan_status in {"presented", "approved", "executing"} and not plan_id:
-            issues.append("active_plan_status_without_plan_id")
-        if stages and (stage_idx < 0 or stage_idx >= len(stages)):
-            issues.append("current_stage_index_out_of_bounds")
-        if not stages and str(state.get("current_stage_id", "") or "").strip():
-            issues.append("current_stage_id_without_stage_list")
-        return issues
+        return []
 
     @staticmethod
     def _infer_resumed_session_state(state: dict[str, Any], inconsistencies: list[str]) -> str:
         turn_counter = int(state.get("turn_counter", 0) or 0)
-        plan_id = str(state.get("current_plan_id", "") or "").strip()
-        approval_required = bool(state.get("approval_required", False))
-        approval_status = str(state.get("approval_status", "none") or "none")
         recent_actions = state.get("recent_actions", []) if isinstance(state.get("recent_actions"), list) else []
         session_memory = state.get("session_memory", {}) if isinstance(state.get("session_memory"), dict) else {}
         has_operational_memory = bool(
             str(session_memory.get("last_goal", "") or "").strip()
             or str(session_memory.get("target_tree", "") or "").strip()
             or bool(session_memory.get("relevant_nodes", []))
-            or bool(session_memory.get("decisions", []))
         )
         has_history = bool(
             turn_counter > 0
             or state.get("last_task_class")
-            or state.get("last_plan_summary")
             or recent_actions
             or has_operational_memory
         )
         if not has_history:
             return "new_session"
-        if inconsistencies:
-            return "resumed_with_inconsistent_state"
-        if plan_id and approval_required and approval_status == "pending":
-            return "resumed_with_approval_pending"
-        if plan_id:
-            return "resumed_with_plan_pending"
         return "resumed_without_pending_plan"
 
     @staticmethod
     def _infer_next_action_expected(state: dict[str, Any], resumed_state: str) -> str:
         if not bool(state.get("agent_session_active", False)):
             return "start_or_continue_session"
-        if resumed_state == "resumed_with_inconsistent_state":
-            return "reset_transient_state_or_rebuild_plan"
-        if bool(state.get("approval_required", False)) and str(state.get("approval_status", "none") or "none") == "pending":
-            return "approve_or_deny_current_plan"
-        if str(state.get("current_plan_status", "none") or "none") == "approved":
-            return "execute_approved_stage"
-        if str(state.get("current_plan_status", "none") or "none") == "executing":
-            return "wait_execution_or_check_journal"
         return "send_new_goal"
-
-    @staticmethod
-    def _set_current_stage_status(state: dict[str, Any], stage_status: str) -> None:
-        stages = state.get("presented_plan_stages")
-        if not isinstance(stages, list):
-            return
-        raw_idx = state.get("current_stage_index", -1)
-        try:
-            idx = int(raw_idx)
-        except Exception:
-            idx = -1
-        if idx < 0 or idx >= len(stages):
-            return
-        stage = stages[idx]
-        if isinstance(stage, dict):
-            stage["stage_status"] = str(stage_status or "pending")
-            state["current_stage_status"] = str(stage_status or "pending")
-
-    def _rebuild_plan_from_state(self, state: dict[str, Any], *, source: str) -> tuple[bool, str]:
-        summary = str(state.get("presented_plan_summary", "") or state.get("last_plan_summary", "") or "").strip()
-        tools = state.get("presented_plan_tools", [])
-        if not isinstance(tools, list):
-            tools = []
-        reads = state.get("presented_context_reads", [])
-        if not isinstance(reads, list):
-            reads = []
-        stages = state.get("presented_plan_stages", [])
-        if not isinstance(stages, list):
-            stages = []
-
-        if not summary and not tools and not stages:
-            return False, "No plan context available to rebuild."
-
-        if not stages:
-            stages = [
-                {
-                    "stage_id": f"stage-{uuid4().hex[:8]}",
-                    "stage_index": 1,
-                    "stage_title": "Recovered Stage",
-                    "stage_goal": summary or "Recovered execution stage",
-                    "stage_tools": [str(t) for t in tools[:6]],
-                    "fallback_possible": bool(state.get("presented_fallback_possible", False)),
-                    "execute_code_risk": bool(state.get("presented_execute_code_risk", False)),
-                    "impact": "restored_from_previous_plan",
-                    "approval_required": True,
-                    "stage_status": "pending",
-                }
-            ]
-
-        stage_idx = 0
-        stage = stages[stage_idx] if stages and isinstance(stages[stage_idx], dict) else {}
-        plan_id = self._new_plan_id()
-        approval_token = self._new_approval_token()
-
-        state["current_plan_id"] = plan_id
-        state["current_plan_status"] = "presented"
-        state["approval_required"] = True
-        state["approval_token"] = approval_token
-        state["approval_status"] = "pending"
-        state["approval_source"] = ""
-        state["presented_plan_summary"] = summary or "Recovered plan from previous pending state."
-        state["presented_plan_tools"] = [str(t) for t in tools[:10]]
-        state["presented_context_reads"] = [str(t) for t in reads[:8]]
-        state["presented_plan_steps"] = [str(s.get("stage_goal", "")) for s in stages if isinstance(s, dict)][:8]
-        state["presented_plan_impacts"] = [str(s.get("impact", "")) for s in stages if isinstance(s, dict)][:8]
-        state["presented_plan_stages"] = stages
-        state["current_stage_index"] = stage_idx
-        state["current_stage_id"] = str(stage.get("stage_id", "") or "")
-        state["current_stage_status"] = "pending"
-        state["runtime_phase"] = "awaiting_user_approval"
-        state["execution_plan_id"] = ""
-        state["execution_approval_token"] = ""
-
-        self.journal.log_runtime_event(
-            event_type="plan_rebuilt_after_invalid_state",
-            payload={
-                "plan_id": plan_id,
-                "approval_token": approval_token,
-                "source": source,
-                "current_stage_id": state.get("current_stage_id", ""),
-            },
-            status="warning",
-        )
-        self.journal.log_runtime_event(
-            event_type="stage_presented_to_user",
-            payload={
-                "plan_id": plan_id,
-                "stage_id": state.get("current_stage_id", ""),
-                "stage_index": stage_idx + 1,
-                "stage_title": stage.get("stage_title", ""),
-                "stage_tools": stage.get("stage_tools", []),
-                "impact": stage.get("impact", ""),
-                "fallback_possible": stage.get("fallback_possible", False),
-                "execute_code_risk": stage.get("execute_code_risk", False),
-            },
-            status="info",
-        )
-        self.journal.log_runtime_event(
-            event_type="approval_requested",
-            payload={"plan_id": plan_id, "approval_token": approval_token, "reason": "rebuild_plan"},
-            status="blocked",
-        )
-        return True, ""
 
     # ------------------------------------------------------------------
     # Public surface
@@ -791,10 +637,6 @@ class Runtime:
                 event_type="resumed_session_state",
                 payload={
                     "resumed_session_state": resumed_state,
-                    "approval_pending": bool(state.get("approval_required", False))
-                    and str(state.get("approval_status", "none") or "none") == "pending",
-                    "plan_pending": bool(str(state.get("current_plan_id", "") or "").strip())
-                    and str(state.get("current_plan_status", "none") or "none") in {"presented", "approved", "executing"},
                     "state_inconsistencies": inconsistencies,
                     "next_action_expected": next_action_expected,
                 },
@@ -811,17 +653,8 @@ class Runtime:
         # is no second conversation surface to advertise.
         state_view["backend_session_kind"] = "technical_runtime"
         state_view["legacy_chat_history_enabled"] = bool(state.get("legacy_chat_history_enabled", False))
-        state_view["control_owner_mode"] = (
-            "enforced" if bool(state.get("control_owner_enforced", False)) else "advisory"
-        )
         state_view["state_inconsistencies"] = inconsistencies
         state_view["next_action_expected"] = next_action_expected
-        state_view["approval_pending"] = bool(state.get("approval_required", False)) and str(
-            state.get("approval_status", "none") or "none"
-        ) == "pending"
-        state_view["plan_pending"] = bool(str(state.get("current_plan_id", "") or "").strip()) and str(
-            state.get("current_plan_status", "none") or "none"
-        ) in {"presented", "approved", "executing"}
         journal_paths = self.journal.get_paths()
         state_view["_runtime_project_root"] = str(self.project_root)
         state_view["_runtime_journal_base_dir"] = journal_paths.get("base_dir", "")
@@ -841,21 +674,13 @@ class Runtime:
         agent_session_active: bool | None = None,
         reset_session_memory: bool = False,
         start_new_session: bool = False,
-        approval_plan_id: str | None = None,
-        approval_token: str | None = None,
-        approval_decision: str | None = None,
-        approval_source: str | None = None,
-        clear_pending_plan: bool = False,
-        clear_approval_state: bool = False,
         reset_transient_state: bool = False,
-        rebuild_plan: bool = False,
         control_source: str | None = None,
-        claim_control_owner: bool = False,
-        force_control_owner: bool = False,
-        control_owner_enforced: bool | None = None,
-        clear_control_owner: bool = False,
         drafting_mode: bool | None = None,
         simulate_bridge_failure: bool | None = None,
+        # Legacy approval/plan params — silently ignored; kept so that
+        # server.py can still forward raw socket payloads without errors.
+        **_ignored: object,
     ) -> dict[str, Any]:
         resolved = self._resolve_blend_path(blend_path)
         state = self._load_runtime_state(resolved)
@@ -874,16 +699,8 @@ class Runtime:
                 "explicit_override_mode": explicit_override_mode,
                 "mcp_write_enabled": mcp_write_enabled,
                 "agent_session_active": agent_session_active,
-                "approval_plan_id": approval_plan_id,
-                "approval_token": approval_token,
-                "approval_decision": approval_decision,
                 "start_new_session": start_new_session,
-                "clear_pending_plan": clear_pending_plan,
-                "clear_approval_state": clear_approval_state,
                 "reset_transient_state": reset_transient_state,
-                "rebuild_plan": rebuild_plan,
-                "control_owner_enforced": control_owner_enforced,
-                "clear_control_owner": clear_control_owner,
                 "simulate_bridge_failure": simulate_bridge_failure,
             }.items()
             if value is not None and value is not False
@@ -971,18 +788,6 @@ class Runtime:
                 payload={"source": source, "reason": "reset_session_memory"},
                 status="warning",
             )
-        if clear_pending_plan:
-            self.journal.log_runtime_event(
-                event_type="pending_plan_cleared",
-                payload={"source": source},
-                status="warning",
-            )
-        if clear_approval_state:
-            self.journal.log_runtime_event(
-                event_type="approval_state_cleared",
-                payload={"source": source},
-                status="warning",
-            )
         if reset_transient_state:
             state_ops.reset_transient_state(state)
             self.journal.log_runtime_event(
@@ -990,135 +795,6 @@ class Runtime:
                 payload={"source": source, "reason": "reset_transient_state"},
                 status="warning",
             )
-        # Guard: draft-first sessions must never enter the legacy plan/approval
-        # machinery. These operations were removed from all active callers (UI and
-        # MCP external server) but the TCP bridge still forwards raw socket fields,
-        # so we gate here rather than relying solely on callers.
-        _skip_legacy_approval_ops = False
-        try:
-            _v1_guard = self.v1_session_for(resolved)
-            _es_guard = getattr(_v1_guard, "execution_state", None)
-            _skip_legacy_approval_ops = bool(getattr(_es_guard, "drafting_mode", False)) or (
-                getattr(_es_guard, "current_draft", None) is not None
-            )
-        except Exception:
-            pass
-        if _skip_legacy_approval_ops and (rebuild_plan or approval_decision is not None):
-            self.journal.log_runtime_event(
-                event_type="legacy_approval_ops_skipped",
-                payload={
-                    "source": source,
-                    "had_rebuild_plan": bool(rebuild_plan),
-                    "had_approval_decision": approval_decision is not None,
-                    "reason": "draft_first_session",
-                },
-                status="warning",
-            )
-            rebuild_plan = False
-            approval_decision = None
-        if rebuild_plan:
-            rebuilt, rebuild_error = self._rebuild_plan_from_state(state, source=source)
-            if not rebuilt:
-                state["last_failure"] = rebuild_error
-                self.journal.log_runtime_event(
-                    event_type="plan_rebuild_failed",
-                    payload={"source": source, "reason": rebuild_error},
-                    status="error",
-                )
-        if approval_decision is not None:
-            decision = str(approval_decision or "").strip().lower()
-            requested_plan_id = str(approval_plan_id or state.get("current_plan_id", "") or "").strip()
-            requested_token = str(approval_token or "").strip()
-            current_plan_id = str(state.get("current_plan_id", "") or "").strip()
-            current_token = str(state.get("approval_token", "") or "").strip()
-            if not requested_plan_id or not requested_token:
-                self.journal.log_runtime_event(
-                    event_type="execution_blocked_invalid_or_missing_approval",
-                    payload={"reason": "missing_plan_id_or_approval_token"},
-                    status="blocked",
-                )
-                state["approval_status"] = "pending"
-                state["runtime_phase"] = "awaiting_user_approval"
-            elif requested_plan_id != current_plan_id or requested_token != current_token:
-                self.journal.log_runtime_event(
-                    event_type="execution_blocked_invalid_or_missing_approval",
-                    payload={
-                        "reason": "approval_token_or_plan_id_mismatch",
-                        "requested_plan_id": requested_plan_id,
-                        "current_plan_id": current_plan_id,
-                    },
-                    status="blocked",
-                )
-                state["approval_status"] = "pending"
-                state["runtime_phase"] = "awaiting_user_approval"
-            elif decision == "granted":
-                state["approval_status"] = "granted"
-                state["current_plan_status"] = "approved"
-                state["approval_source"] = str(approval_source or source or "")
-                state["runtime_phase"] = "approved_waiting_execution"
-                state["session_state"] = "active"
-                self._set_current_stage_status(state, "approved")
-                self.journal.log_runtime_event(
-                    event_type="approval_granted",
-                    payload={
-                        "plan_id": current_plan_id,
-                        "approval_token": current_token,
-                        "approval_source": state["approval_source"],
-                    },
-                    status="success",
-                )
-                self.journal.log_runtime_event(
-                    event_type="stage_approved",
-                    payload={
-                        "plan_id": current_plan_id,
-                        "stage_id": state.get("current_stage_id", ""),
-                        "stage_index": int(state.get("current_stage_index", -1)) + 1,
-                        "approval_source": state["approval_source"],
-                    },
-                    status="success",
-                )
-                if current_plan_id and current_plan_id == str(state.get("fallback_plan_id", "")):
-                    self.journal.log_runtime_event(
-                        event_type="fallback_approval_granted",
-                        payload={"plan_id": current_plan_id, "approval_token": current_token},
-                        status="success",
-                    )
-            elif decision == "denied":
-                state["approval_status"] = "denied"
-                state["current_plan_status"] = "expired"
-                state["approval_required"] = False
-                state["approval_source"] = str(approval_source or source or "")
-                state["runtime_phase"] = "planning"
-                state["session_state"] = "active" if bool(state.get("agent_session_active", False)) else "no_session"
-                self._set_current_stage_status(state, "denied")
-                self.journal.log_runtime_event(
-                    event_type="approval_denied",
-                    payload={
-                        "plan_id": current_plan_id,
-                        "approval_token": current_token,
-                        "approval_source": state["approval_source"],
-                    },
-                    status="warning",
-                )
-                self.journal.log_runtime_event(
-                    event_type="stage_denied",
-                    payload={
-                        "plan_id": current_plan_id,
-                        "stage_id": state.get("current_stage_id", ""),
-                        "stage_index": int(state.get("current_stage_index", -1)) + 1,
-                        "approval_source": state["approval_source"],
-                    },
-                    status="warning",
-                )
-                self.journal.log_runtime_event(
-                    event_type="approval_expired",
-                    payload={
-                        "plan_id": current_plan_id,
-                        "approval_token": current_token,
-                        "reason": "approval_denied",
-                    },
-                    status="warning",
-                )
         # --- Drafting mode toggle (V1 session) ---
         if drafting_mode is not None:
             try:

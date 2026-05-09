@@ -52,6 +52,10 @@ Addon Blender que embute um agente Claude como copiloto de Geometry Nodes para p
 ## Estrutura de arquivos
 
 > Atualização rápida do slim refactor: a árvore detalhada abaixo está desatualizada em vários nomes de arquivo. A superfície viva hoje é `blender_addon/core/`, `blender_addon/handler/`, `blender_addon/runtime/`, `blender_addon/session/`, `blender_addon/tools/` e `blender_addon/ui/`. Arquivos como `agent_runtime.py`, `handlers.py`, `runtime_dispatch.py`, `tools.py`, `skill_router.py`, `runtime/handlers/` e `runtime/gn_targeting.py` não são mais a referência atual.
+>
+> **tools/ fatiado (Onda 3):** `blender_addon/tools/handlers.py` é agora só uma façade (`execute_in_main_thread` + `HANDLERS`). Implementações reais vivem em: `tools/draft.py` (write/read script draft), `tools/reads.py` (focal reads: get_node_context, list_tree_nodes, find_tree_nodes, etc.), `tools/edits.py` (apply_renames, apply_collections, apply_gn_edits), `tools/execution.py` (execute_code), `tools/query.py` (query_node_types), `tools/snapshots.py` (capture_scene, capture_node_trees, capture_full). Não remover `HANDLERS` de `tools/handlers.py`; `server.py` ainda usa essa façade.
+>
+> **set_modes limpo (Onda 4):** os 11 parâmetros dead de approval/control_owner (`approval_token`, `claim_control_owner`, `force_control_owner`, etc.) foram removidos de `runtime/core.py:set_modes` e substituídos por `**_ignored`. `server.py` pode continuar passando esses campos do socket sem erros. `_new_plan_id`, `_rebuild_plan_from_state` e campos `approval_pending`/`plan_pending`/`control_owner_mode` do `get_session_state` state_view também foram removidos.
 
 ```
 blend_IA_ort/

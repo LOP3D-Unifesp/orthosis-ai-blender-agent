@@ -587,32 +587,34 @@ Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
 - `set_modes` em `runtime/core.py` tem parâmetros approval/control_owner que chegam via `server.py` do socket mas nunca são enviados com valores não-padrão pela UI. Cleanup possível mas atravessa fronteiras; deixado para próxima Onda.
 - `compute_next_state` e `infer_session_state` duplicam lógica de inferência por campos — sabido, não removido, pois servem propósitos diferentes (writer vs reader).
 
-### Ponto de retomada desta sessão
+### Onda 4 concluída nesta continuação
 
-- Branch atual: `claude/great-germain-b45281` (commit `95be661`, 1 commit acima de `master`).
+- `set_modes` em `runtime/core.py`: 11 parâmetros dead de approval/control_owner removidos e substituídos por `**_ignored`. `server.py` continua passando esses campos do socket sem erros.
+- `get_session_state` em `runtime/core.py`: campos `control_owner_mode`, `approval_pending`, `plan_pending` removidos do state_view e do journal event `resumed_session_state`.
+- `_new_plan_id` estático removido (orfão após remoção de `_rebuild_plan_from_state` na sessão anterior).
+- Import `from uuid import uuid4` removido (não mais usado).
+- `185 passed` após todas as mudanças.
+- Commits: `95be661` (session_state fix), `898f73d` (approval dead fields).
+
+### Onda 5 concluída nesta continuação
+
+- `CLAUDE.md` atualizado com dois blocos adicionais na nota de aviso da seção "Estrutura de arquivos":
+  - **tools/ fatiado**: lista os módulos reais (`draft`, `reads`, `edits`, `execution`, `query`, `snapshots`) e identifica `handlers.py` como façade.
+  - **set_modes limpo**: documenta a remoção dos 11 params dead e campos do state_view.
+- Grep de imports Python confirmou: nenhum import vivo de `_drafting_support`, `gn_targeting` ou `skill_router` (o único hit em testes é o teste que verifica a ausência do módulo).
+- Commit: `fe675bc`.
+
+### Ponto de retomada — 2026-05-09 (pós Ondas 4-5)
+
+- Branch atual: `claude/great-germain-b45281` (commit `fe675bc`, 3 commits acima de `master`).
 - `185 passed`.
-- Onda 4 iniciada: fix de session_state concluído.
-
-### Próximos passos recomendados a partir daqui
-
-Onda 4 (continuação): limpeza de `set_modes` e approval legacy.
-
-1. Confirmar que nenhum caller real envia `approval_token`, `claim_control_owner`, `force_control_owner` com valores não-padrão:
-   - `grep -rn "approval_token\|claim_control_owner\|force_control_owner" blender_addon ui tests --include="*.py"`
-   - Confirmar que `panel_runtime.py` sempre chama `set_modes` sem esses params, e que `server.py` os passa para frente mas nenhuma chamada de cliente real os usa.
-2. Se confirmado dead code: remover os params de `set_modes` em `runtime/core.py`, atualizar `server.py` para ignorá-los silenciosamente, remover de `panel_runtime.py`.
-3. Validar com `python -m pytest -q` — não precisa smoke Blender se os params são apenas ignorados.
-
-Onda 5 (documentação):
-- Atualizar `CLAUDE.md` seção de estrutura de arquivos para refletir `blender_addon/tools/` fatiado.
-- Revisar documentos que referenciem `_drafting_support.py` ou handlers legados.
+- Ondas 4-5 concluídas: approval dead code removido, CLAUDE.md atualizado.
 
 ### Pendências ainda abertas
 
-- `Runtime` e `AgentRuntime` continuam coexistindo e grandes.
-- `set_modes` approval/control_owner ainda não foi limpo.
-- `server_dispatch.py` continua grande.
-- `CLAUDE.md` estrutura de arquivos desatualizada (seção de tools ainda mostra hierarquia antiga).
+- `Runtime` (em `blender_addon/runtime/core.py`) e `AgentRuntime` (em `blender_addon/core/runtime.py`) continuam coexistindo e grandes — convergência estrutural ainda não feita.
+- `blender_addon/tools/server_dispatch.py` continua grande (não fatiado).
+- `blender_connection.py` e `panel_runtime.py` ainda têm parâmetros `claim_control_owner`/`force_control_owner` nas assinaturas — safe (nunca chamados com valores não-padrão), mas ruído cosmético.
 
 ### Regras para a próxima sessão
 

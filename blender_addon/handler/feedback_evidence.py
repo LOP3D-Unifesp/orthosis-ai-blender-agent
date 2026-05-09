@@ -11,17 +11,6 @@ from typing import Any
 
 from . import TurnContext
 
-_POST_FAILURE_REQUIRED_SECTIONS = (
-    "Sintoma",
-    "Hipotese",
-    "Evidencia",
-    "Confianca",
-    "Limitacoes",
-    "Opcoes",
-    "Pergunta",
-)
-
-
 def _message_words(value: str) -> list[str]:
     normalized = unicodedata.normalize("NFKD", str(value or "").lower())
     normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
@@ -191,23 +180,6 @@ def _analysis_is_useful(text: str) -> bool:
     return _analysis_strategy_count(body) >= 1 or _analysis_has_diagnosis(body) or _analysis_has_failure_reason(body)
 
 
-def _post_failure_missing_sections(text: str) -> list[str]:
-    present = set()
-    required = {section.lower(): section for section in _POST_FAILURE_REQUIRED_SECTIONS}
-    for line in str(text or "").splitlines():
-        head, sep, _tail = line.partition(":")
-        if not sep:
-            continue
-        key = head.strip().lower()
-        if key in required:
-            present.add(required[key])
-    missing: list[str] = []
-    for section in _POST_FAILURE_REQUIRED_SECTIONS:
-        if section not in present:
-            missing.append(section)
-    return missing
-
-
 def _post_failure_strategy_count(text: str) -> int:
     labeled = 0
     for line in str(text or "").splitlines():
@@ -218,12 +190,6 @@ def _post_failure_strategy_count(text: str) -> int:
         if first in {"a", "b"}:
             labeled += 1
     return max(labeled, _analysis_strategy_count(text))
-
-
-def _post_failure_contract_status(text: str) -> tuple[bool, list[str], int]:
-    missing = _post_failure_missing_sections(text)
-    strategy_count = _post_failure_strategy_count(text)
-    return not missing, missing, strategy_count
 
 
 def _post_failure_quality_status(text: str, evidence: dict[str, Any]) -> tuple[bool, list[str], int]:

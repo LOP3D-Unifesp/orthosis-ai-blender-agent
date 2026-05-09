@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import handlers
+from . import draft, execution, handlers, query, reads, snapshots
 from ..project_paths import canonical_project_root
 
 
@@ -487,22 +487,22 @@ class RuntimeDispatcher:
     def _tool_get_node_context(self, tool_input, **_):
         if not tool_input.get("tree_name"):
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_get_node_context(tool_input)
+        return reads.handle_get_node_context(tool_input)
 
     def _tool_get_selected_nodes_context(self, tool_input, **_):
         if not tool_input.get("tree_name"):
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_get_selected_nodes_context(tool_input)
+        return reads.handle_get_selected_nodes_context(tool_input)
 
     def _tool_get_active_frame_context(self, tool_input, **_):
         if not tool_input.get("tree_name"):
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_get_active_frame_context(tool_input)
+        return reads.handle_get_active_frame_context(tool_input)
 
     def _tool_get_local_subgraph_context(self, tool_input, **_):
         if not tool_input.get("tree_name"):
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_get_local_subgraph_context(tool_input)
+        return reads.handle_get_local_subgraph_context(tool_input)
 
     def _tool_get_changes_since_last_turn(self, tool_input, *, session_state=None, **_):
         return self._get_changes_since_last_turn(tool_input, session_state=session_state)
@@ -519,28 +519,28 @@ class RuntimeDispatcher:
             code = tool_input.get("script", "")
         if not code:
             return _json_error("Missing required input: code")
-        return handlers.handle_execute_code({"code": code})
+        return execution.handle_execute_code({"code": code})
 
     def _tool_query_node_types(self, tool_input, **_):
-        return handlers.handle_query_node_types(tool_input)
+        return query.handle_query_node_types(tool_input)
 
     def _tool_list_tree_nodes(self, tool_input, **_):
         tree_name = tool_input.get("tree_name", "")
         if not tree_name:
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_list_tree_nodes(tool_input)
+        return reads.handle_list_tree_nodes(tool_input)
 
     def _tool_find_tree_nodes(self, tool_input, **_):
         tree_name = tool_input.get("tree_name", "")
         if not tree_name:
             return _json_error("Missing required input: tree_name")
-        return handlers.handle_find_tree_nodes(tool_input)
+        return reads.handle_find_tree_nodes(tool_input)
 
     def _tool_write_script_draft(self, tool_input, **_):
-        return handlers.handle_write_script_draft(tool_input)
+        return draft.handle_write_script_draft(tool_input)
 
     def _tool_read_script_draft(self, tool_input, **_):
-        return handlers.handle_read_script_draft(tool_input)
+        return draft.handle_read_script_draft(tool_input)
 
     @staticmethod
     def _tree_hash(tree_data: dict[str, Any]) -> str:
@@ -552,19 +552,19 @@ class RuntimeDispatcher:
         return hashlib.md5(payload.encode("utf-8")).hexdigest()[:12]
 
     def _capture_scene(self) -> dict[str, Any]:
-        result = handlers.handle_capture_scene({})
+        result = snapshots.handle_capture_scene({})
         if result.get("status") != "success":
             return {}
         return result.get("result", {})
 
     def _capture_node_trees(self) -> dict[str, Any]:
-        result = handlers.handle_capture_node_trees({})
+        result = snapshots.handle_capture_node_trees({})
         if result.get("status") != "success":
             return {}
         return result.get("result", {})
 
     def _capture_full(self) -> dict[str, Any]:
-        result = handlers.handle_capture_full({})
+        result = snapshots.handle_capture_full({})
         if result.get("status") != "success":
             return {}
         return result.get("result", {})
@@ -2149,7 +2149,7 @@ class RuntimeDispatcher:
             "else:\n"
             "    print('ERROR: Screenshot failed')\n"
         )
-        result = handlers.handle_execute_code({"code": code})
+        result = execution.handle_execute_code({"code": code})
         if result.get("status") != "success":
             return result
         stdout = result.get("stdout", "")

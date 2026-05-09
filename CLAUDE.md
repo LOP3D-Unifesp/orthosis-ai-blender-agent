@@ -1,5 +1,7 @@
 # CLAUDE.md — blend_IA_ort
 
+> **Status de retomada em 2026-05-09:** a referência operacional atual da refatoração slim é `docs/refactor_handoff/SLIM_DIAGNOSIS_IMPLEMENTATION_HANDOFF.md`. A continuação mais recente foi feita diretamente no working tree, sem criar branch e sem commit. Último estado validado: `python -m pytest -q` com `184 passed` e smoke Blender real `ok: true` em `runtime/validation/blender_runtime_validation_1778339841.json`. Próximo passo recomendado: inventariar `session_state` / `pending_decision` e escolher a menor consolidação validável. O restante deste `CLAUDE.md` continua majoritariamente histórico até uma atualização estrutural completa.
+
 > ⚠️ **Branch atual: `slim-refactor`** (criada 2026-05-06). Esta branch está executando uma refatoração enxuta que substitui ~10k linhas dos 4 módulos bloated (`drafting.py`, `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`) por ~1.7k linhas, preservando os 17 módulos que funcionam. O plano de execução é `docs/SLIM_REFACTOR_PLAN.md` — siga ele, não o resto deste documento, pra decidir o próximo passo. Este CLAUDE.md descreve o **sistema antes do refactor** e fica congelado até a Fase 7 (merge em `master`), quando será reescrito pra refletir a estrutura nova.
 >
 > **Status em 2026-05-07:** Fases 1–5 ✅ concluídas. 213 testes verdes. `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`, `tools.py`, `skill_router.py`, `runtime_agent_loop.py` deletados; substituídos por `core/`, `handler/`, `tools/` e `ui/` enxutos. Wave 5.C absorvida na Fase 4. Dois bugs críticos corrigidos pós-smoke (2026-05-07): (1) `_inquiry_max_rounds_for_state` não subia para 7 em REPAIRING — corrigido via `infer_session_state`; (2) aprovação bare ("pode"/"sim") em REPAIRING sem draft ativo roteava para context_inquiry — roteador agora detecta estado e envia para DRAFT_WORKSPACE. **Próximo passo: Fase 6** — smoke manual completo no Blender (ver `docs/SLIM_REFACTOR_PLAN.md` §Fase 6).
@@ -48,6 +50,8 @@ Addon Blender que embute um agente Claude como copiloto de Geometry Nodes para p
 ---
 
 ## Estrutura de arquivos
+
+> Atualização rápida do slim refactor: a árvore detalhada abaixo está desatualizada em vários nomes de arquivo. A superfície viva hoje é `blender_addon/core/`, `blender_addon/handler/`, `blender_addon/runtime/`, `blender_addon/session/`, `blender_addon/tools/` e `blender_addon/ui/`. Arquivos como `agent_runtime.py`, `handlers.py`, `runtime_dispatch.py`, `tools.py`, `skill_router.py`, `runtime/handlers/` e `runtime/gn_targeting.py` não são mais a referência atual.
 
 ```
 blend_IA_ort/

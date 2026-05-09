@@ -40,34 +40,27 @@ def _on_blend_load_post(scene=None):
     re-enables history hydration so any persisted history for the opened file
     appears in the panel on the next draw cycle.
     """
-    import sys as _sys
     _new_path = get_effective_blend_path()
-    print(f"[DIAG/init._on_blend_load_post] FIRED  new_blend_path={_new_path!r}", file=_sys.stderr, flush=True)
 
     try:
         from .ui.chat_session import SESSION
-        _before = len(SESSION.get_messages())
         SESSION.clear()
-        print(f"[DIAG/init._on_blend_load_post] SESSION.clear() done  msgs_before={_before}  msgs_after={len(SESSION.get_messages())}", file=_sys.stderr, flush=True)
-    except Exception as _e:
-        print(f"[DIAG/init._on_blend_load_post] SESSION.clear() EXCEPTION: {_e}", file=_sys.stderr, flush=True)
+    except Exception:
+        pass
 
     try:
         from .ui import panel as _panel_module
         rt = getattr(_panel_module, "_runtime", None)
-        print(f"[DIAG/init._on_blend_load_post] _runtime is {'set' if rt is not None else 'None'}", file=_sys.stderr, flush=True)
         if rt is not None:
             rt.clear_runtime_context()
         # Enable hydration so the per-file session history (if any) is
         # restored to the panel on the next draw cycle.
         _panel_module._history_hydration_enabled = True
-        print(f"[DIAG/init._on_blend_load_post] _history_hydration_enabled set to True", file=_sys.stderr, flush=True)
-    except Exception as _e:
-        print(f"[DIAG/init._on_blend_load_post] panel setup EXCEPTION: {_e}", file=_sys.stderr, flush=True)
+    except Exception:
+        pass
 
     global _last_known_blend_path
     _last_known_blend_path = _new_path
-    print(f"[DIAG/init._on_blend_load_post] DONE  _last_known_blend_path={_last_known_blend_path!r}", file=_sys.stderr, flush=True)
 
 
 def _reattach_session_binding(previous_blend_path: str, current_blend_path: str) -> None:

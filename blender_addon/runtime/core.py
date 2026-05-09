@@ -144,16 +144,7 @@ class Runtime:
         observe the v1 schema converging in parallel.
         """
         resolved = self._resolve_blend_path(blend_path)
-        # DIAG: (only log when resolved path changes to avoid draw spam)
-        import sys
-        _prev = getattr(self, "_diag_last_resolved", None)
-        if resolved != _prev:
-            self._diag_last_resolved = resolved  # type: ignore[attr-defined]
-            print(f"[DIAG/core.v1_session_for] called blend_path={blend_path!r}  resolved={resolved!r}", file=sys.stderr, flush=True)
         result = self._get_v1_store().load(resolved)
-        _msgs = getattr(getattr(result, "history", None), "messages", [])
-        if resolved != _prev:
-            print(f"[DIAG/core.v1_session_for] returned session msg_count={len(_msgs)}", file=sys.stderr, flush=True)
         # Anchor the journal session to the real blend_path on first resolution.
         if resolved:
             _sid = getattr(getattr(result, "identity", None), "session_id", None) or "runtime"

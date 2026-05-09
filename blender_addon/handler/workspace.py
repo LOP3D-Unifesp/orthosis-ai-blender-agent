@@ -10,17 +10,48 @@ transition; read-only inquiry is handled here first.
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from . import HandlerResult, TurnContext
+from .draft_finalize import (
+    _draft_no_write_reason,
+    _failed_write_diagnostics,
+    _last_failed_write,
+    _last_successful_write,
+    _log_draft_workspace_outcome,
+    _semantic_regression_retry_guidance,
+)
 from ..runtime_planning import is_scene_wide_gn_inspection_request
 from .draft_context import (
     _refresh_baseline_from_structural_memory,
     _tree_render_block,
     _tree_render_observability,
 )
+from .draft_policy import _draft_workspace_tool_policy
+from .draft_prompt import _build_draft_workspace_system
+from .draft_response import (
+    _draft_summary,
+    _finalize_round_limit_text,
+    _line_count,
+    _raw_python_draft_candidate,
+    _runtime_loop_blocker,
+    _sanitize_draft_chat_response,
+    _validate_agent_loop_code_fence,
+    extract_code_fences,
+)
 from .draft_runtime import _with_draft_streaming_disabled
+from .draft_runtime import _replace_last_assistant_message
+from .draft_state import (
+    DraftWorkspacePipelineState,
+    _load_draft_workspace_state,
+    _read_draft_info,
+    _store_pending_action_from_response,
+    _sync_draft_metadata_from_read,
+)
+from .feedback_evidence import _analysis_is_useful, _minimum_useful_analysis_response
 from .prompt import build_system_prompt
 
 
@@ -103,9 +134,6 @@ def handle(ctx: TurnContext, goal_mode: str) -> HandlerResult:
 
 def _handle_inquiry(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     scene_wide_inspection = is_scene_wide_gn_inspection_request(ctx.message)
-    if ctx.meta.needs_baseline_refresh and not scene_wide_inspection:
-        _refresh_baseline(ctx, "build_tree_structural_memory")
-
     discovery_brief = _maybe_run_discovery(ctx, config)
     knowledge = ctx.retrieve_knowledge(budget_tokens=config.knowledge_budget)
     system = build_system_prompt(ctx.session, config.name, knowledge=knowledge)
@@ -274,14 +302,285 @@ def _target_tree_hint(ctx: TurnContext) -> str:
     return ""
 
 
+def _handle_missing_retry_draft_source(ctx: TurnContext, state: DraftWorkspacePipelineState) -> HandlerResult | None:
+    if not state.economy_retry or state.content.strip():
+        return None
+    if state.goal_mode == "functional_expansion":
+        return None
+    error_text = str((state.draft_payload or {}).get("error") or "")
+    if "not found" not in error_text.lower():
+        return None
+    state.es.pending_draft_action = "write_confirmed_draft_revision"
+    state.es.pending_draft_prompt = (
+        "The retry requested a draft rewrite, but GN_Agent_Draft is missing from the Blender Text Editor.\n"
+        "Do not generate code in chat. Ask for the draft block to be restored or for an explicit from-scratch draft request."
+    )
+    state.es.draft_edit_mode = state.edit_mode
+    response = (
+        "Nao encontrei o bloco **GN_Agent_Draft** no Text Editor desta cena, entao eu nao tenho uma fonte de verdade para revisar sem gastar tokens "
+        "inventando tudo de novo. Posso seguir de dois jeitos: restaurando/criando esse bloco primeiro, ou voce pedindo explicitamente um draft novo do zero."
+    )
+    _replace_last_assistant_message(ctx._runtime, response)
+    return HandlerResult(
+        response_text=response,
+        phase_transition="drafting",
+        session_mutations=[{"type": "script_draft_missing_source_block"}],
+    )
+
+
+def _finalize_draft_workspace_attempt(
+    ctx: TurnContext,
+    state: DraftWorkspacePipelineState,
+    *,
+    text: str,
+    structural_memory: dict[str, Any],
+    tool_policy: dict[str, Any],
+) -> HandlerResult:
+    made_draft = False
+    draft_desc = "Draft atualizado"
+    block_name = state.block_name
+
+    write_input, write_payload = _last_successful_write(ctx._runtime)
+    if write_input:
+        made_draft = True
+        draft_desc = str(
+            write_payload.get("description")
+            or write_input.get("description")
+            or getattr(state.draft, "description", "")
+            or "Draft atualizado"
+        )
+        block_name = str(write_payload.get("block_name") or write_input.get("block_name") or block_name)
+
+    extracted_code = extract_code_fences(text)
+    raw_code = _raw_python_draft_candidate(text)
+    leaked_candidate = extracted_code.strip() or raw_code.strip()
+    response_was_truncated = bool(getattr(ctx._runtime, "_last_agent_loop_truncated", False))
+    if not made_draft and leaked_candidate and not response_was_truncated:
+        safe_code, reject_reason = _validate_agent_loop_code_fence(leaked_candidate, state.content)
+        if safe_code:
+            try:
+                raw_write = ctx.execute_tool(
+                    "write_script_draft",
+                    {
+                        "block_name": block_name,
+                        "code": leaked_candidate,
+                        "description": "Draft atualizado a partir de resposta de codigo no chat.",
+                        "tree_name": state.tree_name_hint,
+                        "allow_capability_regression": state.edit_mode == "intentional_rebuild",
+                    },
+                )
+                try:
+                    parsed_write = json.loads(raw_write)
+                except Exception:
+                    parsed_write = {}
+                if isinstance(parsed_write, dict) and str(parsed_write.get("status") or "") == "success":
+                    made_draft = True
+                    draft_desc = "Draft atualizado a partir de resposta de codigo no chat."
+            except Exception:
+                pass
+        else:
+            ctx.log_event(
+                "script_draft_code_leak_blocked",
+                {
+                    "block_name": block_name,
+                    "reason": reject_reason,
+                    "candidate_chars": len(leaked_candidate),
+                    "candidate_lines": _line_count(leaked_candidate),
+                },
+            )
+
+    loop_blocker = _runtime_loop_blocker(ctx._runtime)
+    if not made_draft and loop_blocker and state.goal_mode != "diagnose_only":
+        state.es.pending_draft_action = "write_confirmed_draft_revision"
+        state.es.pending_draft_prompt = (
+            "The previous draft attempt stopped before a safe complete revision was saved.\n"
+            f"User request:\n{str(ctx.message or '')[:500]}\n\n"
+            f"Reason:\n{loop_blocker}"
+        )
+        state.es.draft_edit_mode = state.edit_mode
+        _log_draft_workspace_outcome(
+            ctx,
+            state=state,
+            tool_policy=tool_policy,
+            outcome="interrupted",
+            reason=loop_blocker,
+        )
+        _replace_last_assistant_message(ctx._runtime, loop_blocker)
+        return HandlerResult(
+            response_text=loop_blocker,
+            phase_transition="drafting",
+            session_mutations=[{"type": "script_draft_generation_interrupted"}],
+        )
+    elif not made_draft and loop_blocker:
+        ctx.log_event(
+            "diagnose_only_round_limit_converted_to_analysis",
+            {
+                "reason": loop_blocker[:300],
+                "block_name": block_name,
+            },
+        )
+
+    if made_draft:
+        new_info = _read_draft_info(ctx, block_name)
+        new_draft_obj = _sync_draft_metadata_from_read(ctx, block_name, new_info)
+        if not new_draft_obj or int(getattr(new_draft_obj, "last_written_chars", 0) or 0) <= 0:
+            ctx.log_event(
+                "script_draft_write_inconsistent",
+                {
+                    "block_name": block_name,
+                    "reason": "write_marked_success_but_read_empty",
+                },
+            )
+        else:
+            state.es.pending_draft_action = ""
+            state.es.pending_draft_prompt = ""
+            state.es.retry_requires_draft_change = False
+            state.es.scene_reverted_by_user = False
+            state.es.draft_edit_mode = "preserve_and_refine"
+            state.es.post_failure_state = ""
+            state.es.proposed_strategy_count = 0
+            state.es.proposed_strategy_revision = 0
+            state.es.approved_strategy_label = ""
+            state.es.approved_strategy_prompt = ""
+            state.es.pending_user_decision = None
+            response_text = _draft_summary(
+                action="Draft atual atualizado",
+                block_name=block_name,
+                revision=getattr(new_draft_obj, "version", 0) if new_draft_obj else 0,
+                char_count=getattr(new_draft_obj, "last_written_chars", 0) if new_draft_obj else 0,
+                description=draft_desc,
+            )
+            _log_draft_workspace_outcome(
+                ctx,
+                state=state,
+                tool_policy=tool_policy,
+                outcome="written",
+            )
+            _replace_last_assistant_message(ctx._runtime, response_text)
+            return HandlerResult(
+                response_text=response_text,
+                phase_transition="drafting",
+                session_mutations=[{"type": "script_draft_refined"}],
+            )
+
+    failed_write_input, failed_write_result, failed_write_payload = _last_failed_write(ctx._runtime)
+    if failed_write_input and state.goal_mode != "diagnose_only":
+        diagnostics = _failed_write_diagnostics(failed_write_result, failed_write_payload)
+        reject_reason = str(diagnostics.get("reject_reason") or "")
+        semantic_regression = reject_reason.startswith(
+            (
+                "regression_lost_live_node_refs",
+                "regression_replaced_live_node_refs",
+                "regression_lost_expected_parameters",
+                "regression_replaced_expected_parameters",
+                "regression_lost_focus_regions",
+                "regression_replaced_focus_regions",
+                "target_tree_changed:",
+                "regression_candidate_too_small_vs_existing:",
+            )
+        )
+        retry_guidance = _semantic_regression_retry_guidance(diagnostics) if semantic_regression else ""
+        state.es.pending_draft_action = "write_confirmed_draft_revision"
+        state.es.pending_draft_prompt = (
+            (
+                retry_guidance + "\n\n"
+                if retry_guidance
+                else "Previous write_script_draft failed; retry should generate one complete corrected script and save it in the Text Editor.\n"
+            )
+            + (
+                "Treat this as a living-draft preservation fix: evolve the current script instead of replacing its anchors/capabilities.\n"
+                if semantic_regression
+                else ""
+            )
+            + f"User request:\n{str(ctx.message or '')[:500]}\n\n"
+            + f"Technical blocker:\n{str(diagnostics.get('error_text') or failed_write_result or '')[:800]}"
+        )
+        state.es.retry_requires_draft_change = True
+        state.es.draft_edit_mode = state.edit_mode
+        if semantic_regression:
+            response = (
+                "Tentei salvar o draft, mas a escrita foi bloqueada porque a nova versao regrediu capacidades que o `GN_Agent_Draft` atual ja tinha. "
+                "Eu nao sobrescrevi o script vivo. Mantive a correcao como acao pendente e, no proximo retry, vou orientar a revisao a preservar "
+                "a mesma arvore alvo e os anchors vivos que ja estavam funcionando."
+            )
+        else:
+            response = (
+                "Tentei salvar o draft, mas a escrita foi bloqueada porque o candidato nao era uma revisao completa valida. "
+                "O `GN_Agent_Draft` nao foi sobrescrito. Mantive essa correcao como acao pendente; se voce pedir para tentar de novo, "
+                "vou usar modo economico e escrever uma revisao completa sem ficar investigando a arvore de novo."
+            )
+        if diagnostics.get("error_text") or failed_write_result:
+            response += "\n\nMotivo tecnico: " + str(diagnostics.get("error_text") or failed_write_result)[:500]
+        _log_draft_workspace_outcome(
+            ctx,
+            state=state,
+            tool_policy=tool_policy,
+            outcome="write_blocked",
+            reason=str(diagnostics.get("error_text") or failed_write_result or reject_reason)[:500],
+        )
+        _replace_last_assistant_message(ctx._runtime, response)
+        return HandlerResult(
+            response_text=response,
+            phase_transition="drafting",
+            session_mutations=[{"type": "script_draft_write_blocked"}],
+        )
+
+    response = _finalize_round_limit_text(_sanitize_draft_chat_response(text) or "Terminei a analise no workspace.")
+    if state.goal_mode == "diagnose_only":
+        outcome = str(getattr(state.es, "last_execution_outcome", "") or "")
+        notes = str(getattr(state.es, "last_execution_notes", "") or "")
+        version = int(state.info.get("version") or getattr(state.draft_obj, "version", 0) or 0)
+        generic_no_save = bool(re.search(r"\bnao\s+salvei\s+o\s+draft\b", response, re.IGNORECASE))
+        if generic_no_save or not _analysis_is_useful(response):
+            response = _minimum_useful_analysis_response(
+                block_name=block_name,
+                revision=version,
+                content=state.content,
+                outcome=outcome,
+                notes=notes,
+                structural_memory=structural_memory,
+            )
+    elif not made_draft:
+        _reason_key, fallback_response = _draft_no_write_reason(
+            state,
+            tool_policy=tool_policy,
+            runtime=ctx._runtime,
+        )
+        response = fallback_response
+    reason = ""
+    if not made_draft:
+        reason_key, _ = _draft_no_write_reason(
+            state,
+            tool_policy=tool_policy,
+            runtime=ctx._runtime,
+        )
+        reason = reason_key
+    _log_draft_workspace_outcome(
+        ctx,
+        state=state,
+        tool_policy=tool_policy,
+        outcome="analyzed_only" if not made_draft else "written",
+        reason=reason,
+    )
+    _store_pending_action_from_response(state.es, ctx.message, response)
+    _replace_last_assistant_message(ctx._runtime, response)
+    return HandlerResult(
+        response_text=response,
+        phase_transition="drafting",
+        session_mutations=[{"type": "script_draft_workspace_analyzed"}],
+    )
+
+
 def _handle_draft_goal(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     """Draft workspace goal migrated from the old draft workspace path."""
-    from . import _drafting_support as drafting
-
     setattr(ctx.meta, "goal_mode", config.name)
-    state = drafting._load_draft_workspace_state(ctx)
+    state = getattr(ctx, "_draft_workspace_state_cache", None)
+    if state is None:
+        state = _load_draft_workspace_state(ctx)
+    elif hasattr(ctx, "_draft_workspace_state_cache"):
+        delattr(ctx, "_draft_workspace_state_cache")
     state.goal_mode = config.name
-    missing_source = drafting._handle_missing_retry_draft_source(ctx, state)
+    missing_source = _handle_missing_retry_draft_source(ctx, state)
     if missing_source is not None:
         return missing_source
 
@@ -290,8 +589,8 @@ def _handle_draft_goal(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
     if ctx.meta.needs_baseline_refresh and not state.economy_retry:
         _refresh_baseline(ctx, "build_tree_structural_memory")
 
-    system, structural_memory, prepared_context = drafting._build_draft_workspace_system(ctx, state)
-    tool_policy = drafting._draft_workspace_tool_policy(
+    system, structural_memory, prepared_context = _build_draft_workspace_system(ctx, state)
+    tool_policy = _draft_workspace_tool_policy(
         tree_name_hint=state.tree_name_hint,
         structural_memory=structural_memory,
         relevant_nodes=state.relevant_nodes,
@@ -331,7 +630,7 @@ def _handle_draft_goal(ctx: TurnContext, config: GoalConfig) -> HandlerResult:
         "write_allowed": bool(tool_policy.get("write_allowed", False)),
         "max_rounds": config.max_rounds,
     })
-    return drafting._finalize_draft_workspace_attempt(
+    return _finalize_draft_workspace_attempt(
         ctx,
         state,
         text=text,
@@ -369,12 +668,8 @@ def _maybe_run_discovery(ctx: TurnContext, config: GoalConfig) -> str:
 
     runtime = ctx._runtime
     target_tree = ""
-    canonical_target = getattr(runtime, "_canonical_gn_target", None)
-    if isinstance(canonical_target, dict):
-        target_tree = str(canonical_target.get("tree_name") or "").strip()
-    if not target_tree:
-        session_memory = getattr(runtime, "_session_memory", {}) or {}
-        target_tree = str(session_memory.get("target_tree") or "").strip()
+    session_memory = getattr(runtime, "_session_memory", {}) or {}
+    target_tree = str(session_memory.get("target_tree") or "").strip()
     if not target_tree:
         focus = getattr(ctx.session, "focus", None)
         target_tree = str(getattr(focus, "tree_name", "") or "").strip()
@@ -438,6 +733,8 @@ def _maybe_run_discovery(ctx: TurnContext, config: GoalConfig) -> str:
                 result = result.get("memory", {})
             node_count = int(result.get("node_count") or result.get("total_nodes") or 0)
             snapshot_truncated = bool(result.get("snapshot_truncated", False))
+            if result:
+                _refresh_baseline_from_structural_memory(ctx, result)
             frames = result.get("major_regions") or result.get("frames") or []
             group_nodes = result.get("node_groups") or result.get("group_nodes") or []
             brief_lines.append(
@@ -488,13 +785,7 @@ def _maybe_run_discovery(ctx: TurnContext, config: GoalConfig) -> str:
 
 
 def _refresh_baseline(ctx: TurnContext, tool_name: str) -> None:
-    runtime_target = getattr(ctx._runtime, "_canonical_gn_target", None)
-    tree_name = ""
-    if isinstance(runtime_target, dict):
-        tree_name = str(runtime_target.get("tree_name") or "").strip()
-    if not tree_name:
-        focus = getattr(ctx.session, "focus", None)
-        tree_name = getattr(focus, "tree_name", "") if focus else ""
+    tree_name = _target_tree_hint(ctx)
     if not tree_name:
         return
     try:
@@ -505,16 +796,11 @@ def _refresh_baseline(ctx: TurnContext, tool_name: str) -> None:
                 "tree_name": tree_name, "reason": result_text[:300], "source": "baseline_refresh",
             })
             return
-        baseline = getattr(ctx.session, "baseline_workspace", None)
-        if baseline and result:
-            try:
-                parsed = json.loads(result)
-                baseline.structural_summary = (
-                    parsed if isinstance(parsed, dict) else {"summary": str(result)[:500]}
-                )
-            except (json.JSONDecodeError, ValueError, TypeError):
-                baseline.structural_summary = {"summary": str(result)[:500]}
-            baseline.stale = False
+        parsed = json.loads(result_text or "{}")
+        payload = parsed.get("result", parsed) if isinstance(parsed, dict) else {}
+        memory = payload.get("memory", payload) if isinstance(payload, dict) else {}
+        if isinstance(memory, dict) and memory:
+            _refresh_baseline_from_structural_memory(ctx, memory)
     except Exception as exc:
         ctx.log_event("structural_memory_recovery_failed", {
             "tree_name": tree_name, "reason": str(exc)[:300], "source": "baseline_refresh",

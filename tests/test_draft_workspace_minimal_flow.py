@@ -26,9 +26,9 @@ def _install_fake_bpy() -> None:
 _install_fake_bpy()
 
 from blender_addon.handler import TurnContext
-from blender_addon.handler._drafting_support import handle_draft_workspace
 from blender_addon.runtime.router import ClassifierMeta, TurnClass
 from blender_addon.session.schema import Session
+from draft_workspace_helpers import handle_draft_workspace_via_live_handler
 
 
 class _FakeJournal:
@@ -286,7 +286,7 @@ class TestDraftWorkspaceMinimalFlow(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Nao salvei o draft porque o agente ficou em leitura", result.response_text)
         self.assertIn("execute_code", runtime.last_excluded_tools)

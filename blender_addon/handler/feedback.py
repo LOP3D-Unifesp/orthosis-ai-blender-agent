@@ -25,10 +25,6 @@ from ..runtime.pending_decision import set_pending_decision
 __all__ = [
     "handle",
     "handle_execution_feedback",
-    "_classify_execution_feedback",
-    "_extract_failed_draft_static_evidence",
-    "_fallback_post_failure_diagnosis",
-    "_minimum_useful_analysis_response",
 ]
 
 

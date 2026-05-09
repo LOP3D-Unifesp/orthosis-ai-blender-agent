@@ -4,8 +4,8 @@ This subpackage introduces the v1 structured session model in parallel with
 the legacy flat-dict ``session_store.SessionStore``. Phase 1 only adds the
 data shape, persistence, and migration: it does not yet rewire the runtime.
 The legacy store remains the source of truth for active runtime code; the
-v1 schema is consulted by tests and (later, in Phase 2) by the turn router
-behind the ``USE_STRUCTURED_SESSION_V1`` feature flag.
+v1 schema is consulted by tests and progressively by the slim runtime layers
+as migration work lands.
 """
 
 from __future__ import annotations

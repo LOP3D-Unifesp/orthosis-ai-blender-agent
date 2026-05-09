@@ -16,6 +16,8 @@ from unittest.mock import patch
 _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
+from draft_workspace_helpers import handle_draft_workspace_via_live_handler
+
 
 class _FakeNode:
     def __init__(self, name: str, *, bl_idname: str = "GeometryNodeGroup"):
@@ -423,6 +425,74 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIsNotNone(session.execution_state.pending_user_decision)
         self.assertEqual("pending", session.execution_state.pending_user_decision.status)
 
+    def test_refresh_baseline_uses_structural_memory_payload_instead_of_result_envelope(self):
+        from blender_addon.handler import TurnContext
+        from blender_addon.handler.workspace import _refresh_baseline
+
+        baseline = types.SimpleNamespace(
+            structural_summary={},
+            stale=True,
+            tree_signature="",
+            built_at="",
+            built_from="",
+            semantic_layers=[],
+            subgraph_index={},
+            recipe_associations=[],
+            known_parameters={},
+            open_questions=[],
+        )
+        session = types.SimpleNamespace(
+            execution_state=types.SimpleNamespace(
+                current_draft=None,
+                draft_target_tree="Biomodelo_GN",
+            ),
+            focus=types.SimpleNamespace(tree_name="Biomodelo_GN"),
+            baseline_workspace=baseline,
+            operational_state=types.SimpleNamespace(tree_structural_memory={}),
+        )
+
+        class _Runtime:
+            def __init__(self):
+                self._session_memory = {"target_tree": "Biomodelo_GN"}
+                self.journal = types.SimpleNamespace(log_runtime_event=lambda **_: None)
+                self.last_call = None
+
+            def _execute_tool(self, name, tool_input, _elapsed):
+                self.last_call = (name, tool_input)
+                return json.dumps({
+                    "status": "success",
+                    "result": {
+                        "memory": {
+                            "tree_name": "Biomodelo_GN",
+                            "node_count": 3,
+                            "frame_count": 1,
+                            "group_count": 0,
+                            "major_regions": [{"name": "Palm", "type": "frame"}],
+                            "parameters": {"measures": [{"name": "Palm Width"}]},
+                            "marker": {"node_names": ["ORTHOSIS_CONTEXT"], "links": []},
+                        }
+                    },
+                })
+
+        runtime = _Runtime()
+        ctx = TurnContext(
+            session=session,
+            message="pergunta factual",
+            meta=types.SimpleNamespace(signals=[]),
+            blend_path="",
+            _runtime=runtime,
+            knowledge_dir=Path("/nonexistent/knowledge/domain"),
+        )
+
+        _refresh_baseline(ctx, "build_tree_structural_memory")
+
+        self.assertEqual(("build_tree_structural_memory", {"tree_name": "Biomodelo_GN"}), runtime.last_call)
+        self.assertEqual("Biomodelo_GN", baseline.structural_summary["tree_name"])
+        self.assertEqual(3, baseline.structural_summary["node_count"])
+        self.assertNotIn("status", baseline.structural_summary)
+        self.assertFalse(baseline.stale)
+        self.assertTrue(baseline.tree_signature)
+
     def test_execution_feedback_classifier_handles_real_journal_symptoms(self):
         from blender_addon.handler.feedback import _classify_execution_feedback
 
@@ -440,7 +510,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         )
 
     def test_short_confirmation_reuses_pending_draft_action(self):
-        from blender_addon.handler._drafting_support import _pending_action_instruction
+        from blender_addon.handler.draft_state import _pending_action_instruction
 
         session = _FakeSession()
         session.execution_state.pending_draft_action = "write_confirmed_draft_revision"
@@ -452,7 +522,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("write_script_draft", instruction)
 
     def test_retry_phrase_reuses_pending_draft_action(self):
-        from blender_addon.handler._drafting_support import _pending_action_instruction
+        from blender_addon.handler.draft_state import _pending_action_instruction
 
         session = _FakeSession()
         session.execution_state.pending_draft_action = "write_confirmed_draft_revision"
@@ -492,7 +562,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("", invalid.post_failure_state)
 
     def test_detect_draft_edit_mode_reuses_persisted_mode_on_short_confirmation(self):
-        from blender_addon.handler._drafting_support import _detect_draft_edit_mode
+        from blender_addon.handler.draft_state import _detect_draft_edit_mode
 
         session = _FakeSession()
         session.execution_state.pending_draft_action = "write_confirmed_draft_revision"
@@ -509,7 +579,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("intentional_rebuild", mode)
 
     def test_detect_draft_edit_mode_reuses_persisted_draft_metadata_on_short_retry(self):
-        from blender_addon.handler._drafting_support import _detect_draft_edit_mode_from_source
+        from blender_addon.handler.draft_state import _detect_draft_edit_mode_from_source
 
         session = _FakeSession()
         session.execution_state.draft_edit_mode = "preserve_and_refine"
@@ -525,7 +595,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("intentional_retarget", mode)
 
     def test_detect_draft_goal_mode_prefers_diagnosis_without_write_intent(self):
-        from blender_addon.handler._drafting_support import _detect_draft_goal_mode
+        from blender_addon.handler.draft_state import _detect_draft_goal_mode
 
         session = _FakeSession()
 
@@ -539,7 +609,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("diagnose_only", mode)
 
     def test_detect_draft_goal_mode_distinguishes_expansion_from_correction(self):
-        from blender_addon.handler._drafting_support import _detect_draft_goal_mode
+        from blender_addon.handler.draft_state import _detect_draft_goal_mode
 
         session = _FakeSession()
 
@@ -560,7 +630,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("focal_correction", correction)
 
     def test_detect_draft_goal_mode_treats_explicit_write_as_correction(self):
-        from blender_addon.handler._drafting_support import _detect_draft_goal_mode
+        from blender_addon.handler.draft_state import _detect_draft_goal_mode
 
         session = _FakeSession()
 
@@ -574,7 +644,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("focal_correction", mode)
 
     def test_detect_draft_goal_mode_treats_functional_mismatch_as_correction(self):
-        from blender_addon.handler._drafting_support import _detect_draft_goal_mode
+        from blender_addon.handler.draft_state import _detect_draft_goal_mode
 
         session = _FakeSession()
 
@@ -593,9 +663,9 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_tree_change_message_requests_fresh_draft_context(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import (
+        from blender_addon.handler.draft_context import _read_prepare_draft_context
+        from blender_addon.handler.draft_state import (
             DraftWorkspacePipelineState,
-            _read_prepare_draft_context,
         )
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
@@ -647,7 +717,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertTrue(any(e["event_type"] == "draft_context_force_refresh_requested" for e in runtime.journal.events))
 
     def test_detect_draft_goal_mode_reuses_persisted_draft_goal_mode_on_short_retry(self):
-        from blender_addon.handler._drafting_support import _detect_draft_goal_mode_from_source
+        from blender_addon.handler.draft_state import _detect_draft_goal_mode_from_source
 
         session = _FakeSession()
 
@@ -829,7 +899,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIsNone(sys.modules["bpy"].data.texts.get("GN_Agent_Draft"))
 
     def test_draft_live_node_refs_are_extracted_from_python_structure(self):
-        from blender_addon.tools.handlers import _extract_referenced_node_names, _has_geometry_nodes_operations
+        from blender_addon.tools.draft import _extract_referenced_node_names, _has_geometry_nodes_operations
 
         code = "\n".join([
             "nodes = tree.nodes",
@@ -1273,7 +1343,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertNotIn("extra", compressed)
 
     def test_brief_chat_summary_sanitizes_and_truncates_diagnosis(self):
-        from blender_addon.handler._drafting_support import _brief_chat_summary
+        from blender_addon.handler.draft_response import _brief_chat_summary
 
         raw = "Diagnostico:\n```python\nimport bpy\nprint('x')\n```\n" + ("frase longa. " * 120)
 
@@ -1286,7 +1356,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_draft_workspace_does_not_report_success_after_blocked_write(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.tools.handlers import handle_write_script_draft
 
@@ -1347,7 +1416,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("escrita foi bloqueada", result.response_text)
         text_block = sys.modules["bpy"].data.texts.get("GN_Agent_Draft")
@@ -1357,7 +1426,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_semantic_regression_block_becomes_preservation_retry_instruction(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.tools.handlers import handle_write_script_draft
@@ -1429,7 +1497,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("regrediu capacidades", result.response_text)
         self.assertEqual("write_confirmed_draft_revision", session.execution_state.pending_draft_action)
@@ -1440,7 +1508,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_explicit_rebuild_mode_can_replace_living_draft_anchors_on_same_tree(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.tools.handlers import handle_write_script_draft
@@ -1505,7 +1572,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Text Editor", result.response_text)
         text_block = sys.modules["bpy"].data.texts.get("GN_Agent_Draft")
@@ -1515,7 +1582,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_short_confirmation_reuses_persisted_rebuild_mode_for_living_draft(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.tools.handlers import handle_write_script_draft
@@ -1583,7 +1649,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Text Editor", result.response_text)
         text_block = sys.modules["bpy"].data.texts.get("GN_Agent_Draft")
@@ -1593,7 +1659,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_draft_workspace_diagnose_only_blocks_write_and_returns_analysis(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.tools.handlers import handle_write_script_draft
@@ -1685,7 +1750,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
         tool_status = {call["name"]: call["status"] for call in ctx._runtime._current_turn_tools}
 
         self.assertEqual("blocked", tool_status.get("write_script_draft"))
@@ -1697,7 +1762,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_execution_feedback_retry_cycle_updates_same_draft_and_clears_retry_state(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.handler.feedback import handle_execution_feedback
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
@@ -1809,7 +1873,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(retry_ctx)
+        result = handle_draft_workspace_via_live_handler(retry_ctx)
 
         self.assertIn("Text Editor", result.response_text)
         self.assertFalse(session.execution_state.retry_requires_draft_change)
@@ -1935,7 +1999,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("TF_Metacarpo2", diagnosis_events[-1]["payload"]["static_evidence_touched_nodes"])
 
     def test_failed_draft_static_evidence_detects_touched_nodes_and_semantic_mismatch(self):
-        from blender_addon.handler._drafting_support import (
+        from blender_addon.handler.feedback_evidence import (
             _extract_failed_draft_static_evidence,
             _render_failed_draft_evidence_pack,
         )
@@ -2042,7 +2106,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_semantic_retry_guidance_survives_full_living_draft_cycle(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.handler.feedback import handle_execution_feedback
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
@@ -2148,7 +2211,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             ]),
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
-        blocked = handle_draft_workspace(blocked_ctx)
+        blocked = handle_draft_workspace_via_live_handler(blocked_ctx)
 
         self.assertIn("regrediu capacidades", blocked.response_text)
         self.assertTrue(session.execution_state.retry_requires_draft_change)
@@ -2169,7 +2232,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             ]),
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
-        success = handle_draft_workspace(success_ctx)
+        success = handle_draft_workspace_via_live_handler(success_ctx)
 
         self.assertIn("Text Editor", success.response_text)
         self.assertFalse(session.execution_state.retry_requires_draft_change)
@@ -2178,7 +2241,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_explicit_retarget_mode_can_move_living_draft_to_other_tree(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.core.runtime import AgentRuntime
         from blender_addon.tools.handlers import handle_write_script_draft
@@ -2245,7 +2307,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Text Editor", result.response_text)
         text_block = sys.modules["bpy"].data.texts.get("GN_Agent_Draft")
@@ -2254,7 +2316,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_economy_retry_stops_early_when_draft_block_is_missing(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
         class _FakeRuntime:
@@ -2301,14 +2362,13 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Nao encontrei o bloco", result.response_text)
         self.assertFalse(ctx._runtime.agent_loop_called)
 
     def test_economy_retry_blocks_investigation_and_writes_once(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
         from blender_addon.tools.handlers import handle_write_script_draft
 
@@ -2390,7 +2450,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
         tool_status = {call["name"]: call["status"] for call in ctx._runtime._current_turn_tools}
 
         self.assertEqual("success", tool_status.get("get_active_frame_context"))
@@ -2399,7 +2459,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_draft_workspace_turns_raw_chat_code_into_text_editor_write(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
         class _FakeRuntime:
@@ -2441,7 +2500,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("Text Editor", result.response_text)
         self.assertNotIn("import bpy", result.response_text)
@@ -2449,7 +2508,6 @@ class FoundationStabilizationTests(unittest.TestCase):
 
     def test_draft_workspace_does_not_salvage_raw_chat_code_after_truncation(self):
         from blender_addon.handler import TurnContext
-        from blender_addon.handler._drafting_support import handle_draft_workspace
         from blender_addon.runtime.router import ClassifierMeta, TurnClass
 
         class _FakeRuntime:
@@ -2494,7 +2552,7 @@ class FoundationStabilizationTests(unittest.TestCase):
             knowledge_dir=Path("/nonexistent/knowledge/domain"),
         )
 
-        result = handle_draft_workspace(ctx)
+        result = handle_draft_workspace_via_live_handler(ctx)
 
         self.assertIn("foi truncada", result.response_text)
         self.assertIsNone(sys.modules["bpy"].data.texts.get("GN_Agent_Draft"))
@@ -2503,7 +2561,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("write_confirmed_draft_revision", ctx.session.execution_state.pending_draft_action)
 
     def test_draft_chat_response_sanitizes_code_when_write_is_not_valid(self):
-        from blender_addon.handler._drafting_support import _sanitize_draft_chat_response
+        from blender_addon.handler.draft_response import _sanitize_draft_chat_response
 
         raw = "import bpy\nprint('tentativa curta')"
         fenced = "```python\nimport bpy\nprint('tentativa curta')\n```"
@@ -3158,7 +3216,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertIn("coverage_refresh", payload["prompt_context"])
 
     def test_draft_workspace_tool_policy_falls_back_to_persisted_semantics(self):
-        from blender_addon.handler._drafting_support import _draft_workspace_tool_policy
+        from blender_addon.handler.draft_policy import _draft_workspace_tool_policy
 
         policy = _draft_workspace_tool_policy(
             tree_name_hint="Biomodelo_GN",
@@ -3178,7 +3236,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual(["Metacarpos"], policy["expected_focus_regions"])
 
     def test_draft_workspace_tool_policy_allows_minimum_focal_reads_in_economy_retry(self):
-        from blender_addon.handler._drafting_support import _draft_workspace_tool_policy
+        from blender_addon.handler.draft_policy import _draft_workspace_tool_policy
 
         policy = _draft_workspace_tool_policy(
             tree_name_hint="Biomodelo_GN",
@@ -3201,7 +3259,7 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertFalse(policy["coverage_refresh_needed"])
 
     def test_draft_workspace_tool_policy_keeps_minimum_focal_reads_for_unconfirmed_persisted_coverage(self):
-        from blender_addon.handler._drafting_support import _draft_workspace_tool_policy
+        from blender_addon.handler.draft_policy import _draft_workspace_tool_policy
 
         policy = _draft_workspace_tool_policy(
             tree_name_hint="Biomodelo_GN",

@@ -63,8 +63,7 @@ def _blend_path_to_session_name(blend_path: str) -> str:
 
 # DIAG: helper — print + return value for easy removal
 def _diag(tag: str, msg: str) -> None:
-    import sys
-    print(f"[DIAG/{tag}] {msg}", file=sys.stderr, flush=True)
+    _ = (tag, msg)
 
 
 @dataclass

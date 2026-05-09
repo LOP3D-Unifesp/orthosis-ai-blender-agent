@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import time
 import unicodedata
@@ -34,7 +33,6 @@ from .tool_policy import (
     DraftAttemptState,
 )
 from ..runtime import state_ops
-from ..runtime.gn_targeting import canonicalize_gn_tool_input
 from ..tools import TOOLS, AGENT_TOOLS, dispatch_tool_raw
 
 
@@ -60,7 +58,6 @@ _RETRY_WAIT_SECONDS = [4, 10]
 # The new ``blender_addon.session`` subpackage introduces a structured Session
 # schema that will replace the legacy flat dict in later phases. In Phase 2 the
 # shared ``Runtime`` mirrors operational saves into Session v1.
-USE_STRUCTURED_SESSION_V1 = bool(int(os.environ.get("ORTHOSIS_USE_STRUCTURED_SESSION_V1", "0") or "0"))
 
 
 
@@ -163,14 +160,11 @@ class AgentRuntime:
         self._local_scope: dict[str, Any] = {}
         self._halt_execution: bool = False
         self._halt_message: str = ""
-        self._active_backend_session_id: str = ""
         # Current turn's v1 session (in-memory). Set by run_turn at turn start.
         # _execute_tool reads phase from this instead of reloading from disk,
         # so phase transitions made mid-turn (e.g. confirm → executing) are
         # immediately visible to the phase gate.
         self._active_v1_session: Any = None
-        self._canonical_gn_target: dict[str, Any] | None = None
-        self._canonical_gn_target_source: str = ""
         self._session_memory_usage_reasons: set[str] = set()
         self._draft_tool_policy: dict[str, Any] = {}
         self._draft_attempt_state: DraftAttemptState | None = None
@@ -205,8 +199,6 @@ class AgentRuntime:
         self._halt_message = ""
         self._current_turn_tools = []
         self._read_call_counts = {}
-        self._canonical_gn_target = None
-        self._canonical_gn_target_source = ""
         self._session_memory_usage_reasons = set()
         self._draft_tool_policy = {}
         self._draft_attempt_state = None
@@ -1148,23 +1140,6 @@ class AgentRuntime:
             return budget_block
 
         effective_input = self._normalize_tool_input(tool_name, dict(tool_input or {}))
-        effective_input, deviation = canonicalize_gn_tool_input(
-            tool_name,
-            effective_input,
-            getattr(self, "_canonical_gn_target", None),
-        )
-        if deviation is not None:
-            self.journal.log_runtime_event(
-                event_type="canonical_target_deviation",
-                payload=deviation,
-                status="blocked",
-            )
-            return (
-                "BLOCKED: this read conflicts with the canonical GN target for this turn. "
-                "Ask the user which object/modifier/node group to use before reading a different tree."
-            )
-
-
         started = time.time()
         state = self._session_state or {}
         if bool(state.get("simulate_bridge_failure", False)) and tool_name == "build_tree_structural_memory":

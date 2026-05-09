@@ -553,53 +553,69 @@ ac01da7 cut: prune stale runtime planning helpers
   - `validation_failures: []`
 - Observação: durante a movimentação do writer houve uma falha intermitente uma vez no teste `test_write_script_draft_archives_full_revision_to_disk` dentro da suíte completa; o teste isolado, o arquivo afetado inteiro, o prefixo de arquivos relevante e a suíte completa repetida passaram depois, sem mudança adicional.
 
-### Ponto de retomada
+### Ponto de retomada — 2026-05-09 (pós-commit Ondas 1-3)
 
 Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
 
-- Working tree intencionalmente sujo, sem branch nova e sem commit.
-- Último estado validado: `184 passed`, smoke Blender real `ok: true`.
-- Onda 3 de `tools/handlers.py` está funcionalmente encerrada.
-- `tools/handlers.py` agora é uma façade fina: `execute_in_main_thread` + `HANDLERS`.
-- A superfície real de tools ficou distribuída em:
+- Todas as mudanças das Ondas 1-3 foram commitadas em `master` (commit `00ad96a`).
+- Último estado validado: `185 passed`, smoke Blender real `ok: true`.
+- `tools/handlers.py` é uma façade fina: `execute_in_main_thread` + `HANDLERS`.
+- A superfície real de tools está distribuída em:
   - `blender_addon/tools/draft.py`
   - `blender_addon/tools/reads.py`
   - `blender_addon/tools/edits.py`
   - `blender_addon/tools/execution.py`
   - `blender_addon/tools/query.py`
   - `blender_addon/tools/snapshots.py`
-- Não remover `tools.handlers.HANDLERS` ainda; `blender_addon/server.py` e possíveis integrações externas ainda usam essa façade.
+- Não remover `tools.handlers.HANDLERS` ainda; `blender_addon/server.py` usa essa façade.
 
-### Próximo passo recomendado a partir daqui
+## Atualização de continuidade — 2026-05-09 (sessão pós-handoff)
 
-Próxima frente: `session_state` / `pending_decision`, não mais `tools/handlers.py`.
+### Fix de sessão_state / pending_decision
 
-Primeira onda recomendada:
+- Corrigido bug em `compute_next_state` (`blender_addon/session/session_state_store.py`):
+  - Quando `pending_user_decision.status == "answered"` para kinds de estratégia (`strategy_choice`, `repair_direction`, `write_confirmation`), a função agora retorna `"STRATEGY_APPROVED"` em vez de cair no `retry_requires_draft_change → REPAIRING`.
+  - Este era o bug "STRATEGY_APPROVED colapsando para REPAIRING no mesmo run".
+- Adicionado teste `test_strategy_approved_does_not_collapse_to_repairing` em `tests/test_pending_user_decision.py`.
+- `185 passed` após o fix.
+- Commitado em `claude/great-germain-b45281` (commit `95be661`).
 
-1. Fazer inventário por grep, sem editar:
-   - `rg -n "session_state|pending_decision|set_pending_decision|compute_next_state|infer_session_state|set_modes|control_owner|approval" blender_addon tests docs`
-2. Comparar com `docs/state_inventory.md`, especialmente as seções de `runtime/session_state`, `ExecutionState.session_state` e `PendingUserDecision`.
-3. Escolher a menor consolidação validável. Preferência atual:
-   - não mexer em router amplo;
-   - não reescrever FSM;
-   - procurar um write paralelo ou campo espelhado claramente redundante;
-   - adicionar ou ajustar teste antes de remover comportamento.
-4. Validar com:
-   - testes focados de `tests/test_pending_user_decision.py`, `tests/test_routing_observability.py`, `tests/test_repair_conversation_loop.py`;
-   - `python -m pytest -q`;
-   - smoke Blender real se tocar runtime/handler de produção.
+### Inventário feito nesta sessão
+
+- Todos os writes diretos a `es.session_state` mapeados: 9 lugares (pending_decision.py, feedback.py, core/runtime.py).
+- `feedback.py:185` tem write redundante (`es.session_state = "STRATEGY_PROPOSED"`) antes de `set_pending_decision()` na mesma branch — funciona como safety net se set_pending_decision falhar; deixado como está.
+- `set_modes` em `runtime/core.py` tem parâmetros approval/control_owner que chegam via `server.py` do socket mas nunca são enviados com valores não-padrão pela UI. Cleanup possível mas atravessa fronteiras; deixado para próxima Onda.
+- `compute_next_state` e `infer_session_state` duplicam lógica de inferência por campos — sabido, não removido, pois servem propósitos diferentes (writer vs reader).
+
+### Ponto de retomada desta sessão
+
+- Branch atual: `claude/great-germain-b45281` (commit `95be661`, 1 commit acima de `master`).
+- `185 passed`.
+- Onda 4 iniciada: fix de session_state concluído.
+
+### Próximos passos recomendados a partir daqui
+
+Onda 4 (continuação): limpeza de `set_modes` e approval legacy.
+
+1. Confirmar que nenhum caller real envia `approval_token`, `claim_control_owner`, `force_control_owner` com valores não-padrão:
+   - `grep -rn "approval_token\|claim_control_owner\|force_control_owner" blender_addon ui tests --include="*.py"`
+   - Confirmar que `panel_runtime.py` sempre chama `set_modes` sem esses params, e que `server.py` os passa para frente mas nenhuma chamada de cliente real os usa.
+2. Se confirmado dead code: remover os params de `set_modes` em `runtime/core.py`, atualizar `server.py` para ignorá-los silenciosamente, remover de `panel_runtime.py`.
+3. Validar com `python -m pytest -q` — não precisa smoke Blender se os params são apenas ignorados.
+
+Onda 5 (documentação):
+- Atualizar `CLAUDE.md` seção de estrutura de arquivos para refletir `blender_addon/tools/` fatiado.
+- Revisar documentos que referenciem `_drafting_support.py` ou handlers legados.
 
 ### Pendências ainda abertas
 
 - `Runtime` e `AgentRuntime` continuam coexistindo e grandes.
-- `session_state`, `pending_decision`, `set_modes` e legado de approval/control_owner ainda não foram simplificados.
-- `server_dispatch.py` continua grande, mas a extração de `tools/handlers.py` reduziu a superfície de risco imediata.
-- `CLAUDE.md` ainda é majoritariamente histórico; o topo aponta para este handoff como referência de retomada.
+- `set_modes` approval/control_owner ainda não foi limpo.
+- `server_dispatch.py` continua grande.
+- `CLAUDE.md` estrutura de arquivos desatualizada (seção de tools ainda mostra hierarquia antiga).
 
 ### Regras para a próxima sessão
 
-- Não criar branch.
-- Não fazer commit.
 - Não reescrever do zero.
 - Continuar por refatorações cirúrgicas, incrementais e validáveis.
 - Não inventar conclusão sem validação.

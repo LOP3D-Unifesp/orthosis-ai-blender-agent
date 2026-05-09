@@ -147,6 +147,13 @@ def compute_next_state(session: Any) -> str:
         current = str(getattr(es, "session_state", "") or "")
         return current if current == "STRATEGY_PROPOSED" else "STRATEGY_PROPOSED"
 
+    # When a strategy decision was answered, preserve STRATEGY_APPROVED for the
+    # rest of the turn so retry_requires_draft_change cannot collapse it to REPAIRING.
+    if pending is not None and str(getattr(pending, "status", "") or "") == "answered":
+        kind = str(getattr(pending, "kind", "") or "")
+        if kind in {"strategy_choice", "repair_direction", "write_confirmation"}:
+            return "STRATEGY_APPROVED"
+
     phase = str(getattr(es, "phase", "") or "")
     current_draft = getattr(es, "current_draft", None)
     draft_revision = int(getattr(es, "draft_revision", 0) or 0)

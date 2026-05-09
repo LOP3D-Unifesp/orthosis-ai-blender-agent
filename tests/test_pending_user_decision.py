@@ -308,6 +308,25 @@ class PendingUserDecisionTests(unittest.TestCase):
 
         self.assertEqual("STRATEGY_PROPOSED", compute_next_state(session))
 
+    def test_strategy_approved_does_not_collapse_to_repairing(self) -> None:
+        from blender_addon.runtime.pending_decision import resolve_pending_decision, set_pending_decision
+        from blender_addon.session import compute_next_state
+        from blender_addon.session.schema import Session
+
+        session = Session.new("case.blend")
+        es = session.execution_state
+        es.retry_requires_draft_change = True
+        runtime = _Runtime()
+        ctx = SimpleNamespace(session=session, _runtime=runtime)
+        set_pending_decision(ctx, kind="strategy_choice", options=["A", "B"], prompt_summary="A ou B?")
+
+        result = resolve_pending_decision(session, "A", runtime=runtime)
+        self.assertEqual("answered", result.status)
+
+        # After strategy is answered, compute_next_state must return STRATEGY_APPROVED,
+        # not collapse to REPAIRING via retry_requires_draft_change.
+        self.assertEqual("STRATEGY_APPROVED", compute_next_state(session))
+
     def test_resolution_does_not_add_open_phrases_to_router_lists(self) -> None:
         routing_obs = (PROJECT_ROOT / "blender_addon" / "runtime" / "routing_obs.py").read_text(encoding="utf-8")
         router = (PROJECT_ROOT / "blender_addon" / "runtime" / "router.py").read_text(encoding="utf-8")

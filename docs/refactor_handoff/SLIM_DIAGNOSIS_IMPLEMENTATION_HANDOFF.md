@@ -691,3 +691,42 @@ Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
 - Não inventar conclusão sem validação.
 - Sempre alinhar testes ao caminho real de produção.
 - Se houver dúvida entre duas frentes grandes, priorizar a menor e de menor risco funcional.
+
+## Atualização de continuidade — 2026-05-13 (Phase 3 Steps 1+2)
+
+### Phase 3 Passo 1: `infer_turn_intent` extraída para `router.py`
+
+- `AgentRuntime._infer_turn_intent` era `@staticmethod` sem nenhuma dependência de instância.
+- Movida como função de módulo `infer_turn_intent(session, user_message)` para `blender_addon/runtime/router.py`.
+- Docstring do `router.py` atualizada (era: "logic lives inline in `AgentRuntime._infer_turn_intent`").
+- Imports mortos `import re` e `import unicodedata` removidos de `blender_addon/core/runtime.py`.
+- Call sites em `core/runtime.py` (2 locais) atualizados.
+- 6 call sites em testes migrados de `AgentRuntime._infer_turn_intent` para `infer_turn_intent` importado diretamente de `blender_addon.runtime.router`.
+
+### Phase 3 Passo 2: `_extract_tree_name/_extract_node_name` consolidadas
+
+- Havia 3 cópias: definições locais em `runtime/core.py` (L42–55), static methods passthrough em `AgentRuntime`, e as originais em `runtime_planning.py`.
+- Definições locais privadas em `runtime/core.py` removidas; substituídas por `from ..runtime_planning import extract_node_name as _extract_node_name, extract_tree_name as _extract_tree_name`.
+- Static methods passthrough `AgentRuntime._extract_tree_name/_extract_node_name` (que já delegavam para `runtime_planning`) removidas.
+- Todos os call sites em `core/runtime.py` passam a chamar `extract_tree_name()`/`extract_node_name()` diretamente (já importadas no topo do módulo).
+
+### Validação desta sessão
+
+- `185 passed` em ambos os passos.
+- Nenhuma mudança de comportamento — zero risco ao caminho de turno.
+
+### Ponto de retomada — 2026-05-13 (pós Phase 3 Steps 1+2)
+
+- Branch worktree: `claude/bold-noether-4e1c5e` (changes não commitadas — Passos 1+2 desta sessão).
+- Branch principal: `main` (commit `c028926`).
+- `185 passed`.
+- **O que foi feito nesta sessão:** Passos 1 e 2 da Phase 3 (extração/consolidação, zero risco).
+- **Próximo passo (Phase 3 Passo 3):** Dar a `Runtime` um `run_turn()` que o chat path possa chamar diretamente. Requer:
+  - Decidir como `Runtime` recebe `api_key`/`model` (no construtor ou no `run_turn`).
+  - `panel_runtime.py` cria `AgentRuntime` passando `runtime=Runtime(...)` — precisaria mudar para criar só `Runtime`.
+  - Este passo toca o caminho de turno e requer smoke manual no Blender antes de ser considerado concluído.
+- **Pendências que continuam abertas:**
+  - Mergear worktrees anteriores em main (commits de limpeza dead params + extração tree_analysis + Passos 1+2 desta sessão).
+  - Convergência `Runtime`/`AgentRuntime` — Phase 3 Passo 3 em diante.
+  - `server_dispatch.py` ainda tem ~1754 linhas.
+  - CLAUDE.md com árvore detalhada antiga.

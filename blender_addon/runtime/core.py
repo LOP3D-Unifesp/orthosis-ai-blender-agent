@@ -32,27 +32,12 @@ from pathlib import Path
 from typing import Any
 
 from ..operation_journal import OperationJournal
+from ..runtime_planning import extract_node_name as _extract_node_name, extract_tree_name as _extract_tree_name
 from ..tools.server_dispatch import RuntimeDispatcher
 from ..safety_policy import SafetyContext, evaluate_tool_call
 from ..session import BaselineBuilder, LastFailure
 from . import state_ops
 from .state_ops import default_state as _default_state
-
-
-def _extract_tree_name(tool_input: dict[str, Any]) -> str:
-    for key in ("tree_name", "target_tree"):
-        value = tool_input.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
-
-
-def _extract_node_name(tool_input: dict[str, Any]) -> str:
-    for key in ("node_name", "name", "node", "from_node", "old_name", "object_name"):
-        value = tool_input.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
 def _state_focus_tree_name(state: dict[str, Any]) -> str:

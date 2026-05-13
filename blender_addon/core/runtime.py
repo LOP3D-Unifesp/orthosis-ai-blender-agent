@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import re
 import time
-import unicodedata
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
@@ -17,6 +15,7 @@ from ..runtime_planning import (
     extract_node_name,
     extract_tree_name,
 )
+from ..runtime.router import infer_turn_intent
 from .agent_loop import agent_loop, send_screenshot_turn
 from .api_client import (
     extract_text,
@@ -501,7 +500,7 @@ class AgentRuntime:
             return _fast_text
 
         # --- Simple intent inference for the slim runtime ---
-        turn_class, meta, goal_mode = self._infer_turn_intent(session, user_message)
+        turn_class, meta, goal_mode = infer_turn_intent(session, user_message)
         _pending_after_resolution = getattr(session.execution_state, "pending_user_decision", None)
         _pending_write_approval = (
             pending_resolution is not None
@@ -539,7 +538,7 @@ class AgentRuntime:
                 )
             except Exception:
                 pass
-            turn_class, meta, goal_mode = self._infer_turn_intent(session, user_message)
+            turn_class, meta, goal_mode = infer_turn_intent(session, user_message)
             if _pending_write_approval:
                 try:
                     turn_class = TurnClass.DRAFT_WORKSPACE
@@ -743,146 +742,6 @@ class AgentRuntime:
                 pass
 
         return result.response_text
-
-    @staticmethod
-    def _infer_turn_intent(session: Any, user_message: str):
-        """Infer the slim workspace goal using the four Phase-3 rules."""
-        from ..runtime.router import ClassifierMeta, TurnClass
-
-        text = str(user_message or "").strip()
-        lowered = text.lower()
-        normalized = unicodedata.normalize("NFKD", lowered)
-        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-        normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
-        word_list = normalized.split()
-        words = set(word_list)
-
-        def has_prefix(*prefixes: str) -> bool:
-            return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
-
-        es = getattr(session, "execution_state", None)
-        pending = getattr(es, "pending_user_decision", None) if es is not None else None
-        pending_status = str(getattr(pending, "status", "") or "")
-        session_state = str(getattr(es, "session_state", "") or "")
-        has_active_draft = (
-            getattr(es, "current_draft", None) is not None
-            or int(getattr(es, "draft_revision", 0) or 0) > 0
-            or bool(getattr(es, "drafting_mode", False))
-        ) if es is not None else False
-
-        signals: list[str] = []
-        if pending_status == "answered":
-            signals.append("pending_decision_resolved")
-            meta = ClassifierMeta(
-                turn_class=TurnClass.DRAFT_WORKSPACE,
-                signals=signals,
-                raw_message=text,
-                turn_intent="strategy_approval",
-                session_state=session_state or "STRATEGY_APPROVED",
-                goal_mode="focal_correction",
-            )
-            return TurnClass.DRAFT_WORKSPACE, meta, "focal_correction"
-
-        if text.startswith("[RESULTADO DE EXECUÇÃO"):
-            signals.append("execution_result_prefix")
-            meta = ClassifierMeta(
-                turn_class=TurnClass.EXECUTION_FEEDBACK,
-                signals=signals,
-                raw_message=text,
-                turn_intent="feedback_fix",
-                session_state=session_state,
-                goal_mode="feedback_fix",
-            )
-            return TurnClass.EXECUTION_FEEDBACK, meta, "feedback_fix"
-
-        pending_kind = str(getattr(pending, "kind", "") or "")
-        diagnosis_request = (
-            has_prefix("diagnostic", "analis", "investig", "certeza", "verific")
-            or (
-                "antes" in words
-                and "de" in words
-                and has_prefix("escrev", "salv", "ger", "cri")
-            )
-        )
-        continuation_request = (
-            word_list in (["continua"], ["continue"], ["continuar"], ["segue"], ["prossegue"])
-            or word_list == ["pode", "continuar"]
-        )
-        retry_state_active = bool(
-            getattr(es, "retry_requires_draft_change", False)
-            or str(getattr(es, "pending_draft_action", "") or "").strip()
-            or session_state in {"REPAIRING", "STRATEGY_APPROVED"}
-        ) if es is not None else False
-        retry_request = bool(
-            has_active_draft
-            and retry_state_active
-            and "tenta" in words
-            and bool({"denovo", "novo", "novamente"} & words)
-        )
-        if retry_request:
-            signals.append("stateful_retry_request")
-            meta = ClassifierMeta(
-                turn_class=TurnClass.DRAFT_WORKSPACE,
-                signals=signals,
-                raw_message=text,
-                turn_intent="draft_refinement",
-                session_state=session_state,
-                goal_mode="focal_correction",
-                needs_baseline_refresh=True,
-            )
-            return TurnClass.DRAFT_WORKSPACE, meta, "focal_correction"
-        if has_active_draft and (
-            diagnosis_request
-            or (
-                pending_status == "pending"
-                and pending_kind in {"strategy_choice", "repair_direction", "write_confirmation"}
-                and continuation_request
-            )
-        ):
-            signals.append("diagnose_only_request" if diagnosis_request else "pending_diagnosis_continuation")
-            meta = ClassifierMeta(
-                turn_class=TurnClass.DRAFT_WORKSPACE,
-                signals=signals,
-                raw_message=text,
-                turn_intent="diagnose_only",
-                session_state=session_state,
-                goal_mode="diagnose_only",
-                needs_baseline_refresh=True,
-            )
-            return TurnClass.DRAFT_WORKSPACE, meta, "diagnose_only"
-
-        write_request = has_prefix(
-            "escrev", "salv", "ger", "cri", "faz", "corrig", "corrij",
-            "ajust", "arrum", "consert", "reescrev", "refa", "alter",
-            "mud", "implement", "apli", "write", "save", "generate",
-            "create", "fix", "adjust", "rewrite",
-        )
-        if write_request:
-            signals.append("explicit_write_imperative")
-            goal_mode = "focal_correction" if has_active_draft else "functional_expansion"
-            meta = ClassifierMeta(
-                turn_class=TurnClass.DRAFT_WORKSPACE,
-                signals=signals,
-                raw_message=text,
-                turn_intent="draft_refinement" if has_active_draft else "draft_write",
-                session_state=session_state,
-                goal_mode=goal_mode,
-                needs_baseline_refresh=True,
-            )
-            return TurnClass.DRAFT_WORKSPACE, meta, goal_mode
-
-        signals.append("default_inquiry")
-        meta = ClassifierMeta(
-            turn_class=TurnClass.CONTEXT_INQUIRY,
-            confidence="low",
-            signals=signals,
-            raw_message=text,
-            turn_intent="pure_inquiry",
-            session_state=session_state,
-            goal_mode="inquiry",
-            needs_baseline_refresh=True,
-        )
-        return TurnClass.CONTEXT_INQUIRY, meta, "inquiry"
 
     @staticmethod
     def _sync_operational_state_to_session(session: Any, runtime_state: dict[str, Any]) -> None:
@@ -1254,8 +1113,8 @@ class AgentRuntime:
                 "step": self._tool_step,
                 "elapsed_ms": tool_elapsed_ms,
                 "status": str(runtime_raw.get("status", "")),
-                "tree_name": self._extract_tree_name(tool_input),
-                "node_name": self._extract_node_name(tool_input),
+                "tree_name": extract_tree_name(tool_input),
+                "node_name": extract_node_name(tool_input),
                 "used_structured_tool": True,
             }
             self.journal.log_runtime_event(
@@ -1341,7 +1200,7 @@ class AgentRuntime:
         state = AgentRuntime._ensure_draft_attempt_state(self, policy)
         status = str(runtime_raw.get("status", "") or "")
         result = runtime_raw.get("result", {}) if isinstance(runtime_raw.get("result"), dict) else {}
-        tree_name = AgentRuntime._extract_tree_name(tool_input) or str(result.get("tree_name", "")).strip()
+        tree_name = extract_tree_name(tool_input) or str(result.get("tree_name", "")).strip()
         if tree_name:
             state.target_tree = tree_name
             state.target_resolved = True
@@ -1677,14 +1536,6 @@ class AgentRuntime:
     def _send_screenshot_turn(self, screenshot_result: str) -> str:
         return send_screenshot_turn(self, screenshot_result)
 
-    @staticmethod
-    def _extract_tree_name(tool_input: dict[str, Any]) -> str:
-        return extract_tree_name(tool_input)
-
-    @staticmethod
-    def _extract_node_name(tool_input: dict[str, Any]) -> str:
-        return extract_node_name(tool_input)
-
     def _handle_stale_local_scope_tool_failure(self, tool_name: str, result: str) -> str:
         self._local_scope = {}
         state = self._session_state if isinstance(self._session_state, dict) else {}
@@ -1722,8 +1573,8 @@ class AgentRuntime:
         result = runtime_raw.get("result", {})
         if not isinstance(result, dict):
             result = {}
-        tree_name = self._extract_tree_name(tool_input) or str(result.get("tree_name", "")).strip()
-        node_name = self._extract_node_name(tool_input)
+        tree_name = extract_tree_name(tool_input) or str(result.get("tree_name", "")).strip()
+        node_name = extract_node_name(tool_input)
         session_memory_target_tree = str(self._session_memory.get("target_tree", "") or "").strip()
         tree_scoped_tools = {
             "get_tree_parameters",

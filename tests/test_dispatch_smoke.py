@@ -131,16 +131,15 @@ class _FakeRuntimeForAgentTurn:
 
 class SlimHandlerSmokeTests(unittest.TestCase):
     def test_runtime_intent_rules_route_to_single_workspace_modes(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
         session = _FakeSession()
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(session, "qual o estado da arvore?")
+        turn_class, meta, goal_mode = infer_turn_intent(session, "qual o estado da arvore?")
         self.assertEqual(TurnClass.CONTEXT_INQUIRY, turn_class)
         self.assertEqual("inquiry", goal_mode)
         self.assertEqual("inquiry", meta.goal_mode)
 
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+        turn_class, meta, goal_mode = infer_turn_intent(
             session,
             "[RESULTADO DE EXECUÇÃO — Revisão v38]\nResultado: FALHOU",
         )
@@ -149,7 +148,7 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("feedback_fix", meta.goal_mode)
 
         session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+        turn_class, meta, goal_mode = infer_turn_intent(
             session,
             "o draft nao foi, tenta escrever novamente",
         )
@@ -158,13 +157,12 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("draft_refinement", meta.turn_intent)
 
     def test_diagnosis_before_write_routes_read_only_even_with_write_word(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
         session = _FakeSession()
         session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
 
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+        turn_class, meta, goal_mode = infer_turn_intent(
             session,
             "Faz um diagnostico geral primeiro, analise a arvore profundamente e pegue todas as certezas que vc precisa antes de escrever.",
         )
@@ -175,8 +173,7 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertIn("diagnose_only_request", meta.signals)
 
     def test_pending_repair_continua_routes_to_read_only_diagnosis(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
         session = _FakeSession()
         session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
@@ -187,7 +184,7 @@ class SlimHandlerSmokeTests(unittest.TestCase):
             options=["sim", "não"],
         )
 
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(session, "continua")
+        turn_class, meta, goal_mode = infer_turn_intent(session, "continua")
 
         self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
         self.assertEqual("diagnose_only", goal_mode)
@@ -195,8 +192,7 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertIn("pending_diagnosis_continuation", meta.signals)
 
     def test_repair_retry_routes_to_draft_refinement_without_router_regex(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
         session = _FakeSession()
         session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
@@ -204,7 +200,7 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         session.execution_state.retry_requires_draft_change = True
         session.execution_state.pending_draft_action = "write_confirmed_draft_revision"
 
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(session, "ok tenta denovo")
+        turn_class, meta, goal_mode = infer_turn_intent(session, "ok tenta denovo")
 
         self.assertEqual(TurnClass.DRAFT_WORKSPACE, turn_class)
         self.assertEqual("focal_correction", goal_mode)

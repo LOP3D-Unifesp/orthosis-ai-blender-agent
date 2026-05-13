@@ -329,10 +329,9 @@ class FoundationStabilizationTests(unittest.TestCase):
         _install_fake_bpy()
 
     def test_slim_runtime_routes_execution_result_prefix_with_revision_label(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+        turn_class, meta, goal_mode = infer_turn_intent(
             _FakeSession(),
             "[RESULTADO DE EXECUÇÃO — Revisão v38]\nResultado: FALHOU\nDescrição: nada aconteceu",
         )
@@ -342,12 +341,11 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("feedback_fix", meta.goal_mode)
 
     def test_slim_runtime_routes_escrever_as_write_intent(self):
-        from blender_addon.core.runtime import AgentRuntime
-        from blender_addon.runtime.router import TurnClass
+        from blender_addon.runtime.router import TurnClass, infer_turn_intent
 
         session = _FakeSession()
         session.execution_state.current_draft = types.SimpleNamespace(block_name="GN_Agent_Draft")
-        turn_class, meta, goal_mode = AgentRuntime._infer_turn_intent(
+        turn_class, meta, goal_mode = infer_turn_intent(
             session,
             "o draft nao foi, tenta vc escrever ele novamente",
         )

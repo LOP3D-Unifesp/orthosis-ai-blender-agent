@@ -427,15 +427,11 @@ def _runtime_set_modes(
     reset_session_memory: bool = False,
     start_new_session: bool = False,
     reset_transient_state: bool = False,
-    claim_control_owner: bool = False,
-    force_control_owner: bool = False,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "type": "runtime_set_modes",
         "blend_path": blend_path,
         "control_source": "chat_ui",
-        "claim_control_owner": bool(claim_control_owner),
-        "force_control_owner": bool(force_control_owner),
         "reset_session_memory": bool(reset_session_memory),
         "start_new_session": bool(start_new_session),
         "reset_transient_state": bool(reset_transient_state),

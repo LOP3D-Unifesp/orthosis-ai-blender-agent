@@ -166,19 +166,8 @@ class BlenderConnection:
         agent_session_active: bool | None = None,
         reset_session_memory: bool | None = None,
         start_new_session: bool | None = None,
-        approval_plan_id: str | None = None,
-        approval_token: str | None = None,
-        approval_decision: str | None = None,
-        approval_source: str | None = None,
-        clear_pending_plan: bool | None = None,
-        clear_approval_state: bool | None = None,
         reset_transient_state: bool | None = None,
-        rebuild_plan: bool | None = None,
         control_source: str | None = None,
-        claim_control_owner: bool | None = None,
-        force_control_owner: bool | None = None,
-        control_owner_enforced: bool | None = None,
-        clear_control_owner: bool | None = None,
     ) -> dict:
         cmd = {"type": "runtime_set_modes"}
         if debug_mode is not None:
@@ -193,32 +182,10 @@ class BlenderConnection:
             cmd["reset_session_memory"] = bool(reset_session_memory)
         if start_new_session is not None:
             cmd["start_new_session"] = bool(start_new_session)
-        if approval_plan_id is not None:
-            cmd["approval_plan_id"] = str(approval_plan_id)
-        if approval_token is not None:
-            cmd["approval_token"] = str(approval_token)
-        if approval_decision is not None:
-            cmd["approval_decision"] = str(approval_decision)
-        if approval_source is not None:
-            cmd["approval_source"] = str(approval_source)
-        if clear_pending_plan is not None:
-            cmd["clear_pending_plan"] = bool(clear_pending_plan)
-        if clear_approval_state is not None:
-            cmd["clear_approval_state"] = bool(clear_approval_state)
         if reset_transient_state is not None:
             cmd["reset_transient_state"] = bool(reset_transient_state)
-        if rebuild_plan is not None:
-            cmd["rebuild_plan"] = bool(rebuild_plan)
         if control_source is not None:
             cmd["control_source"] = str(control_source)
-        if claim_control_owner is not None:
-            cmd["claim_control_owner"] = bool(claim_control_owner)
-        if force_control_owner is not None:
-            cmd["force_control_owner"] = bool(force_control_owner)
-        if control_owner_enforced is not None:
-            cmd["control_owner_enforced"] = bool(control_owner_enforced)
-        if clear_control_owner is not None:
-            cmd["clear_control_owner"] = bool(clear_control_owner)
         return self.send_command(cmd)
 
     def runtime_get_session(self) -> dict:

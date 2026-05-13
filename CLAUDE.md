@@ -55,7 +55,7 @@ Addon Blender que embute um agente Claude como copiloto de Geometry Nodes para p
 >
 > **tools/ fatiado (Onda 3):** `blender_addon/tools/handlers.py` é agora só uma façade (`execute_in_main_thread` + `HANDLERS`). Implementações reais vivem em: `tools/draft.py` (write/read script draft), `tools/reads.py` (focal reads: get_node_context, list_tree_nodes, find_tree_nodes, etc.), `tools/edits.py` (apply_renames, apply_collections, apply_gn_edits), `tools/execution.py` (execute_code), `tools/query.py` (query_node_types), `tools/snapshots.py` (capture_scene, capture_node_trees, capture_full). Não remover `HANDLERS` de `tools/handlers.py`; `server.py` ainda usa essa façade.
 >
-> **set_modes limpo (Onda 4):** os 11 parâmetros dead de approval/control_owner (`approval_token`, `claim_control_owner`, `force_control_owner`, etc.) foram removidos de `runtime/core.py:set_modes` e substituídos por `**_ignored`. `server.py` pode continuar passando esses campos do socket sem erros. `_new_plan_id`, `_rebuild_plan_from_state` e campos `approval_pending`/`plan_pending`/`control_owner_mode` do `get_session_state` state_view também foram removidos.
+> **set_modes limpo (Onda 4 + 2026-05-13):** os 11 parâmetros dead de approval/control_owner foram removidos de `runtime/core.py:set_modes` (substituídos por `**_ignored`) e também do lado cliente: `blender_connection.py:runtime_set_modes` e `panel_runtime.py:send_set_modes` não enviam mais esses campos. `blender_addon/server.py` também parou de encaminhar os campos do socket para `set_modes`. `_new_plan_id`, `_rebuild_plan_from_state` e campos `approval_pending`/`plan_pending`/`control_owner_mode` do `get_session_state` também foram removidos.
 
 ```
 blend_IA_ort/

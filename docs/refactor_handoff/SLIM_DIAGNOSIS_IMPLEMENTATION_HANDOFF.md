@@ -611,11 +611,45 @@ Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
 - Ondas 1-5 concluídas: tools fatiados, shim removido, session_state fix, approval dead code removido, CLAUDE.md atualizado.
 - **Para iniciar a próxima sessão:** abrir o projeto no diretório principal (`blend_IA_ort_v2/`), verificar `python -m pytest -q` → 185 green, e seguir pelas pendências abaixo.
 
-### Pendências ainda abertas
+## Atualização de continuidade — 2026-05-13 (sessão pós Ondas 4-5)
 
-- `Runtime` (em `blender_addon/runtime/core.py`) e `AgentRuntime` (em `blender_addon/core/runtime.py`) continuam coexistindo e grandes — convergência estrutural ainda não feita.
-- `blender_addon/tools/server_dispatch.py` continua grande (não fatiado).
-- `blender_connection.py` e `panel_runtime.py` ainda têm parâmetros `claim_control_owner`/`force_control_owner` nas assinaturas — safe (nunca chamados com valores não-padrão), mas ruído cosmético.
+### Limpeza de params dead no lado cliente/bridge
+
+- Removidos `claim_control_owner`, `force_control_owner` de:
+  - `blender_addon/ui/panel_runtime.py:send_set_modes` (assinatura e payload)
+  - `blender_connection.py:runtime_set_modes` (assinatura e corpo)
+  - `blender_addon/server.py` (forwarding para `set_modes`)
+- Removidos também 8 outros params dead do grupo approval/plan de `blender_connection.py` e `blender_addon/server.py`:
+  - `approval_plan_id`, `approval_token`, `approval_decision`, `approval_source`
+  - `clear_pending_plan`, `clear_approval_state`, `rebuild_plan`
+  - `control_owner_enforced`, `clear_control_owner`
+- `set_modes` em `runtime/core.py` já tinha `**_ignored` desde Onda 4; esses params eram forwarded mas nunca populados por nenhum chamador real.
+- CLAUDE.md atualizado para refletir o estado atual do set_modes limpo.
+- Commit: `f3c7eae`. `185 passed`.
+
+### Análise das pendências grandes
+
+**`server_dispatch.py` (2161 linhas):**
+- `RuntimeDispatcher` tem 66 métodos. Apenas `_capture_screenshot` usa `bpy.` diretamente.
+- Extração do cluster de análise semântica (`_classify_tree_phases`, `_map_clinical_parameter_roles`, helpers) para `tools/tree_analysis.py` exigiria atualizar 87+ call sites de `self._norm_text`, `self._confidence`, etc. em métodos que ficam no `RuntimeDispatcher`.
+- Alternativa (shims de compatibilidade) é desencourajada pelo CLAUDE.md.
+- Decisão: não fatiar agora — churn excede benefício no incremento.
+
+**`Runtime`/`AgentRuntime` convergência:**
+- `runtime/core.py` (1289L, `Runtime`) é Blender-side session manager.
+- `core/runtime.py` (2056L, `AgentRuntime`) é Python-side turn orchestrator (chama Claude API).
+- Docstring de `Runtime` planeja "Phase 3: move chat turns onto Runtime.run_turn, retire AgentRuntime".
+- Essa é uma refatoração completa do caminho de turno. Não é cirúrgica.
+- Decisão: abordar separadamente como Phase 3 explícita quando houver disponibilidade para validar no Blender real.
+
+### Ponto de retomada — 2026-05-13 (pós limpeza dead params cliente/bridge)
+
+- Branch worktree: `claude/stupefied-mayer-b50c9f` (commit `f3c7eae`). Branch principal: `main` (commit `c028926`).
+- `185 passed`.
+- **Pendências que restam:**
+  - Convergência `Runtime`/`AgentRuntime` — Phase 3 arquitetural, grande.
+  - `server_dispatch.py` não fatiado — requer decisão sobre abordagem (shims vs. update massivo).
+  - CLAUDE.md ainda tem árvore detalhada antiga no corpo — só foi adicionado aviso no topo.
 
 ### Regras para a próxima sessão
 

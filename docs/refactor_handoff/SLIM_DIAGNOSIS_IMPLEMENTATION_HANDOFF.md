@@ -604,11 +604,12 @@ Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
 - Grep de imports Python confirmou: nenhum import vivo de `_drafting_support`, `gn_targeting` ou `skill_router` (o único hit em testes é o teste que verifica a ausência do módulo).
 - Commit: `fe675bc`.
 
-### Ponto de retomada — 2026-05-09 (pós Ondas 4-5)
+### Ponto de retomada — 2026-05-13 (pós Ondas 4-5, tudo em master)
 
-- Branch atual: `claude/great-germain-b45281` (commit `fe675bc`, 3 commits acima de `master`).
+- Branch: `master` (commit `c028926`). Worktree da sessão mergeado e removido.
 - `185 passed`.
-- Ondas 4-5 concluídas: approval dead code removido, CLAUDE.md atualizado.
+- Ondas 1-5 concluídas: tools fatiados, shim removido, session_state fix, approval dead code removido, CLAUDE.md atualizado.
+- **Para iniciar a próxima sessão:** abrir o projeto no diretório principal (`blend_IA_ort_v2/`), verificar `python -m pytest -q` → 185 green, e seguir pelas pendências abaixo.
 
 ### Pendências ainda abertas
 

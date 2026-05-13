@@ -9,11 +9,10 @@ import os
 import re
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import draft, execution, handlers, query, reads, snapshots
+from . import draft, execution, handlers, query, reads, snapshots, tree_analysis as _ta
 from ..project_paths import canonical_project_root
 
 
@@ -651,12 +650,6 @@ class RuntimeDispatcher:
                     }
         return _json_error(f"No object found using tree '{tree_name}'.")
 
-    @staticmethod
-    def _bounded_list(values: Any, *, limit: int = 8) -> list[Any]:
-        if not isinstance(values, list):
-            return []
-        return [item for item in values[:limit]]
-
     def _draft_context_summary(
         self,
         *,
@@ -723,15 +716,15 @@ class RuntimeDispatcher:
         next_targets = interpretation.get("next_structural_targets", []) if isinstance(interpretation.get("next_structural_targets"), list) else []
         if next_targets:
             lines.append(f"- next_target: {str(next_targets[0])[:180]}")
-        guidance_summary = self._norm_text(goal_guidance.get("summary"))
+        guidance_summary = _ta._norm_text(goal_guidance.get("summary"))
         if guidance_summary:
             lines.append(f"- mode_summary: {guidance_summary}")
-        suggested_output = self._norm_text(goal_guidance.get("suggested_output"))
+        suggested_output = _ta._norm_text(goal_guidance.get("suggested_output"))
         if suggested_output:
             lines.append(f"- suggested_output: {suggested_output}")
         focus_priorities = goal_guidance.get("focus_priorities", []) if isinstance(goal_guidance.get("focus_priorities"), list) else []
         if focus_priorities:
-            sample = ", ".join(str(item)[:80] for item in focus_priorities[:4] if self._norm_text(item))
+            sample = ", ".join(str(item)[:80] for item in focus_priorities[:4] if _ta._norm_text(item))
             if sample:
                 lines.append(f"- focus_priorities: {sample}")
         blockers = write_requirements.get("blockers", []) if isinstance(write_requirements.get("blockers"), list) else []
@@ -765,7 +758,7 @@ class RuntimeDispatcher:
             if not isinstance(item, dict):
                 continue
             for key in ("name", "identifier"):
-                value = self._norm_text(item.get(key))
+                value = _ta._norm_text(item.get(key))
                 if value and value not in confirmed_parameter_refs:
                     confirmed_parameter_refs.append(value)
         for key in ("measurement_parameters", "positioning_parameters"):
@@ -774,7 +767,7 @@ class RuntimeDispatcher:
                 if not isinstance(item, dict):
                     continue
                 for field in ("name", "identifier", "role"):
-                    value = self._norm_text(item.get(field))
+                    value = _ta._norm_text(item.get(field))
                     if value and value not in confirmed_parameter_refs:
                         confirmed_parameter_refs.append(value)
         confirmed_focus_regions: list[str] = []
@@ -784,7 +777,7 @@ class RuntimeDispatcher:
                 if not isinstance(item, dict):
                     continue
                 for field in ("region", "name", "label"):
-                    value = self._norm_text(item.get(field))
+                    value = _ta._norm_text(item.get(field))
                     if value and value not in confirmed_focus_regions:
                         confirmed_focus_regions.append(value)
         likely_regions = clinical_roles.get("likely_affected_regions", []) if isinstance(clinical_roles.get("likely_affected_regions"), list) else []
@@ -792,7 +785,7 @@ class RuntimeDispatcher:
             if not isinstance(item, dict):
                 continue
             for field in ("region", "name", "label"):
-                value = self._norm_text(item.get(field))
+                value = _ta._norm_text(item.get(field))
                 if value and value not in confirmed_focus_regions:
                     confirmed_focus_regions.append(value)
         major_regions = structural_memory.get("major_regions", []) if isinstance(structural_memory.get("major_regions"), list) else []
@@ -800,12 +793,12 @@ class RuntimeDispatcher:
             if not isinstance(item, dict):
                 continue
             for field in ("name", "label", "probable_function"):
-                value = self._norm_text(item.get(field))
+                value = _ta._norm_text(item.get(field))
                 if value and value not in confirmed_focus_regions:
                     confirmed_focus_regions.append(value)
-        persisted_live_refs = [self._norm_text(item) for item in stored_live_node_refs if self._norm_text(item)][:8]
-        persisted_parameter_refs = [self._norm_text(item) for item in stored_expected_parameter_refs if self._norm_text(item)][:10]
-        persisted_focus_regions = [self._norm_text(item) for item in stored_expected_focus_regions if self._norm_text(item)][:10]
+        persisted_live_refs = [_ta._norm_text(item) for item in stored_live_node_refs if _ta._norm_text(item)][:8]
+        persisted_parameter_refs = [_ta._norm_text(item) for item in stored_expected_parameter_refs if _ta._norm_text(item)][:10]
+        persisted_focus_regions = [_ta._norm_text(item) for item in stored_expected_focus_regions if _ta._norm_text(item)][:10]
         coverage_confirmed_this_turn = bool(confirmed_parameter_refs or confirmed_focus_regions or structural_memory)
         coverage_refresh_needed = bool(
             (persisted_live_refs or persisted_parameter_refs or persisted_focus_regions)
@@ -834,14 +827,14 @@ class RuntimeDispatcher:
         for item in suggested_regions[:4]:
             if not isinstance(item, dict):
                 continue
-            region = self._norm_text(item.get("region") or item.get("name") or item.get("label"))
+            region = _ta._norm_text(item.get("region") or item.get("name") or item.get("label"))
             if region and region not in focus_priorities:
                 focus_priorities.append(region)
         measurement_parameters = clinical_roles.get("measurement_parameters", []) if isinstance(clinical_roles.get("measurement_parameters"), list) else []
         for item in measurement_parameters[:3]:
             if not isinstance(item, dict):
                 continue
-            name = self._norm_text(item.get("name") or item.get("identifier") or item.get("role"))
+            name = _ta._norm_text(item.get("name") or item.get("identifier") or item.get("role"))
             if name and name not in focus_priorities:
                 focus_priorities.append(name)
         if goal_mode == "diagnose_only":
@@ -885,23 +878,23 @@ class RuntimeDispatcher:
         goal_mode = self._normalize_draft_goal_mode(tool_input.get("goal_mode"))
         has_existing_draft = bool(tool_input.get("has_existing_draft", False))
         stored_live_node_refs = [
-            self._norm_text(item) for item in (tool_input.get("stored_live_node_refs") or [])
-            if self._norm_text(item)
+            _ta._norm_text(item) for item in (tool_input.get("stored_live_node_refs") or [])
+            if _ta._norm_text(item)
         ][:8]
         stored_expected_parameter_refs = [
-            self._norm_text(item) for item in (tool_input.get("stored_expected_parameter_refs") or [])
-            if self._norm_text(item)
+            _ta._norm_text(item) for item in (tool_input.get("stored_expected_parameter_refs") or [])
+            if _ta._norm_text(item)
         ][:10]
         stored_expected_focus_regions = [
-            self._norm_text(item) for item in (tool_input.get("stored_expected_focus_regions") or [])
-            if self._norm_text(item)
+            _ta._norm_text(item) for item in (tool_input.get("stored_expected_focus_regions") or [])
+            if _ta._norm_text(item)
         ][:10]
         resolved = self._resolve_gn_workspace(tool_input, session_state=session_state)
         if resolved.get("status") != "success":
             return resolved
         workspace = resolved.get("result", {}) if isinstance(resolved.get("result"), dict) else {}
-        requested_tree = self._norm_text(tool_input.get("tree_name"))
-        tree_name = requested_tree or self._norm_text(workspace.get("selected_tree"))
+        requested_tree = _ta._norm_text(tool_input.get("tree_name"))
+        tree_name = requested_tree or _ta._norm_text(workspace.get("selected_tree"))
 
         warnings = [
             str(item)
@@ -1033,21 +1026,21 @@ class RuntimeDispatcher:
         phase_summary = {
             "tree_phase": str(phase.get("tree_phase") or memory.get("phase_dominant") or "unknown"),
             "confidence": phase.get("confidence", {}),
-            "unresolved_regions": self._bounded_list(phase.get("unresolved_regions", []), limit=6),
-            "transition_regions": self._bounded_list(phase.get("transition_regions", []), limit=6),
+            "unresolved_regions": _ta._bounded_list(phase.get("unresolved_regions", []), limit=6),
+            "transition_regions": _ta._bounded_list(phase.get("transition_regions", []), limit=6),
         }
         clinical_summary = {
             "summary": clinical_roles.get("summary", {}),
-            "measurement_parameters": self._bounded_list(clinical_roles.get("measurement_parameters", []), limit=8),
-            "positioning_parameters": self._bounded_list(clinical_roles.get("positioning_parameters", []), limit=8),
-            "likely_affected_regions": self._bounded_list(clinical_roles.get("likely_affected_regions", []), limit=8),
+            "measurement_parameters": _ta._bounded_list(clinical_roles.get("measurement_parameters", []), limit=8),
+            "positioning_parameters": _ta._bounded_list(clinical_roles.get("positioning_parameters", []), limit=8),
+            "likely_affected_regions": _ta._bounded_list(clinical_roles.get("likely_affected_regions", []), limit=8),
         }
         interpretation_summary = {
             "functional_summary": str(interpretation.get("functional_summary") or ""),
             "workflow_stage_summary": interpretation.get("workflow_stage_summary", {}),
-            "suggested_focus_regions": self._bounded_list(interpretation.get("suggested_focus_regions", []), limit=8),
-            "next_structural_targets": self._bounded_list(interpretation.get("next_structural_targets", []), limit=5),
-            "organization_observations": self._bounded_list(interpretation.get("organization_observations", []), limit=6),
+            "suggested_focus_regions": _ta._bounded_list(interpretation.get("suggested_focus_regions", []), limit=8),
+            "next_structural_targets": _ta._bounded_list(interpretation.get("next_structural_targets", []), limit=5),
+            "organization_observations": _ta._bounded_list(interpretation.get("organization_observations", []), limit=6),
         }
         goal_guidance = self._draft_goal_guidance(
             goal_mode=goal_mode,
@@ -1060,7 +1053,7 @@ class RuntimeDispatcher:
                 "tree": str(parameters.get("tree") or tree_name),
                 "object": str(parameters.get("object") or ""),
                 "modifier": str(parameters.get("modifier") or ""),
-                "parameters": self._bounded_list(parameters.get("parameters", []), limit=16),
+                "parameters": _ta._bounded_list(parameters.get("parameters", []), limit=16),
             } if parameters else {},
             clinical_roles=clinical_summary,
             interpretation=interpretation_summary,
@@ -1071,9 +1064,9 @@ class RuntimeDispatcher:
                 "group_count": int(memory.get("group_count", 0) or 0),
                 "phase_dominant": str(memory.get("phase_dominant") or ""),
                 "organization_assessment": memory.get("organization_assessment", {}),
-                "key_outputs": self._bounded_list(memory.get("key_outputs", []), limit=8),
-                "key_joins": self._bounded_list(memory.get("key_joins", []), limit=8),
-                "major_regions": self._bounded_list(memory.get("major_regions", []), limit=10),
+                "key_outputs": _ta._bounded_list(memory.get("key_outputs", []), limit=8),
+                "key_joins": _ta._bounded_list(memory.get("key_joins", []), limit=8),
+                "major_regions": _ta._bounded_list(memory.get("major_regions", []), limit=10),
                 "parameters": memory.get("parameters", {}),
             } if memory else {},
             stored_live_node_refs=stored_live_node_refs,
@@ -1118,17 +1111,17 @@ class RuntimeDispatcher:
             "group_count": int(memory.get("group_count", 0) or 0),
             "phase_dominant": str(memory.get("phase_dominant") or ""),
             "organization_assessment": memory.get("organization_assessment", {}),
-            "key_outputs": self._bounded_list(memory.get("key_outputs", []), limit=8),
-            "key_joins": self._bounded_list(memory.get("key_joins", []), limit=8),
-            "major_regions": self._bounded_list(memory.get("major_regions", []), limit=10),
+            "key_outputs": _ta._bounded_list(memory.get("key_outputs", []), limit=8),
+            "key_joins": _ta._bounded_list(memory.get("key_joins", []), limit=8),
+            "major_regions": _ta._bounded_list(memory.get("major_regions", []), limit=10),
             "parameters": memory.get("parameters", {}),
             "marker": {
                 "tree_hash": str((memory.get("marker") if isinstance(memory.get("marker"), dict) else {}).get("tree_hash") or ""),
-                "node_names": self._bounded_list(
+                "node_names": _ta._bounded_list(
                     (memory.get("marker") if isinstance(memory.get("marker"), dict) else {}).get("node_names", []),
                     limit=260,
                 ),
-                "links": self._bounded_list(
+                "links": _ta._bounded_list(
                     (memory.get("marker") if isinstance(memory.get("marker"), dict) else {}).get("links", []),
                     limit=80,
                 ),
@@ -1147,7 +1140,7 @@ class RuntimeDispatcher:
             "tree": str(parameters.get("tree") or tree_name),
             "object": str(parameters.get("object") or ""),
             "modifier": str(parameters.get("modifier") or ""),
-            "parameters": self._bounded_list(parameters.get("parameters", []), limit=16),
+            "parameters": _ta._bounded_list(parameters.get("parameters", []), limit=16),
         } if parameters else {}
         result = {
             "goal_mode": goal_mode,
@@ -1179,36 +1172,11 @@ class RuntimeDispatcher:
         )
         return {"status": "success", "result": result}
 
-    @staticmethod
-    def _utc_now_iso() -> str:
-        return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-    @staticmethod
-    def _confidence(score: float) -> dict[str, Any]:
-        score = max(0.0, min(float(score), 1.0))
-        if score >= 0.8:
-            level = "high"
-        elif score >= 0.55:
-            level = "medium"
-        else:
-            level = "low"
-        return {"score": round(score, 2), "level": level}
-
-    @staticmethod
-    def _norm_text(value: Any) -> str:
-        return str(value or "").strip()
-
     def _normalize_draft_goal_mode(self, value: Any) -> str:
-        mode = self._norm_text(value)
+        mode = _ta._norm_text(value)
         if mode in self._VALID_DRAFT_GOAL_MODES:
             return mode
         return "functional_expansion"
-
-    @staticmethod
-    def _contains_name(haystack: str, needle: str) -> bool:
-        hay = haystack.lower()
-        item = needle.strip().lower()
-        return bool(item) and item in hay
 
     def _workspace_candidates(self, scene: dict[str, Any], node_trees: dict[str, Any]) -> list[dict[str, Any]]:
         object_flags: dict[str, dict[str, bool]] = {}
@@ -1224,19 +1192,19 @@ class RuntimeDispatcher:
         for group in node_trees.get("node_groups", []):
             if not isinstance(group, dict):
                 continue
-            tree_name = self._norm_text(group.get("name"))
+            tree_name = _ta._norm_text(group.get("name"))
             if not tree_name:
                 continue
             bindings = []
             for raw in group.get("bindings", []) if isinstance(group.get("bindings"), list) else []:
                 if not isinstance(raw, dict):
                     continue
-                object_name = self._norm_text(raw.get("object_name"))
+                object_name = _ta._norm_text(raw.get("object_name"))
                 flags = object_flags.get(object_name, {})
                 bindings.append(
                     {
                         "object_name": object_name,
-                        "modifier_name": self._norm_text(raw.get("modifier_name")),
+                        "modifier_name": _ta._norm_text(raw.get("modifier_name")),
                         "active_object": bool(flags.get("active", False)),
                         "selected_object": bool(flags.get("selected", False)),
                         "parameter_count": len(raw.get("inputs", [])) if isinstance(raw.get("inputs"), list) else 0,
@@ -1286,7 +1254,7 @@ class RuntimeDispatcher:
                     "selected_tree": "",
                     "selected_binding": {},
                     "selection_reason": "no_geometry_nodes_tree_found",
-                    "confidence": self._confidence(0.0),
+                    "confidence": _ta._confidence(0.0),
                     "bindings": [],
                     "explicit_user_target_detected": False,
                     "warnings": ["No Geometry Nodes tree or bound modifier was found in the scene."],
@@ -1295,24 +1263,24 @@ class RuntimeDispatcher:
 
         state = session_state if isinstance(session_state, dict) else {}
         memory = state.get("session_memory") if isinstance(state.get("session_memory"), dict) else {}
-        remembered_tree = self._norm_text(memory.get("target_tree") or state.get("last_target_tree"))
+        remembered_tree = _ta._norm_text(memory.get("target_tree") or state.get("last_target_tree"))
         message = " ".join(
             [
-                self._norm_text(tool_input.get("user_message")),
-                self._norm_text(tool_input.get("tree_name")),
-                self._norm_text(tool_input.get("object_name")),
-                self._norm_text(tool_input.get("modifier_name")),
+                _ta._norm_text(tool_input.get("user_message")),
+                _ta._norm_text(tool_input.get("tree_name")),
+                _ta._norm_text(tool_input.get("object_name")),
+                _ta._norm_text(tool_input.get("modifier_name")),
             ]
         )
         explicit_matches = []
         for item in candidates:
             tree_name = item["tree_name"]
             binding_hit = any(
-                self._contains_name(message, b.get("object_name", ""))
-                or self._contains_name(message, b.get("modifier_name", ""))
+                _ta._contains_name(message, b.get("object_name", ""))
+                or _ta._contains_name(message, b.get("modifier_name", ""))
                 for b in item.get("bindings", [])
             )
-            if self._contains_name(message, tree_name) or binding_hit:
+            if _ta._contains_name(message, tree_name) or binding_hit:
                 explicit_matches.append(item)
         explicit_detected = bool(explicit_matches)
         warnings: list[str] = []
@@ -1370,128 +1338,12 @@ class RuntimeDispatcher:
                 "selected_tree": selected.get("tree_name", "") if isinstance(selected, dict) else "",
                 "selected_binding": selected_binding,
                 "selection_reason": reason,
-                "confidence": self._confidence(score),
+                "confidence": _ta._confidence(score),
                 "bindings": selected.get("bindings", []) if isinstance(selected, dict) else [],
                 "explicit_user_target_detected": explicit_detected,
                 "warnings": warnings,
             },
         }
-
-    @staticmethod
-    def _node_type(node: dict[str, Any]) -> str:
-        return str(node.get("bl_idname") or node.get("type") or "")
-
-    @staticmethod
-    def _node_label(node: dict[str, Any]) -> str:
-        return str(node.get("label") or node.get("name") or "")
-
-    @staticmethod
-    def _keyword_hits(text: str, patterns: tuple[str, ...]) -> int:
-        lowered = text.lower()
-        return sum(1 for pat in patterns if pat in lowered)
-
-    def _phase_scores(self, nodes: list[dict[str, Any]]) -> dict[str, int]:
-        p1 = (
-            "primitive", "cube", "sphere", "cylinder", "transform", "join", "bio",
-            "biomodel", "anatom", "radius", "ulna", "forearm", "hand", "measure",
-            "position", "param", "mesh",
-        )
-        p2 = ("bezier", "curve", "path", "profile", "spline", "trim", "resample")
-        p3 = ("orthosis", "ortese", "shell", "solidify", "thickness", "surface", "boolean", "offset")
-        scores = {"phase_1": 0, "phase_2": 0, "phase_3": 0}
-        for node in nodes:
-            text = f"{node.get('name', '')} {node.get('label', '')} {self._node_type(node)}"
-            scores["phase_1"] += self._keyword_hits(text, p1)
-            scores["phase_2"] += self._keyword_hits(text, p2)
-            scores["phase_3"] += self._keyword_hits(text, p3)
-        return scores
-
-    def _dominant_phase(self, nodes: list[dict[str, Any]]) -> tuple[str, float, dict[str, int]]:
-        scores = self._phase_scores(nodes)
-        total = sum(scores.values())
-        if total <= 0:
-            return "unknown", 0.2, scores
-        phase = max(scores, key=scores.get)
-        best = scores[phase]
-        confidence = max(0.25, min(0.95, best / max(total, 1)))
-        return phase, round(confidence, 2), scores
-
-    def _region_function(self, name: str, nodes: list[dict[str, Any]]) -> str:
-        text = " ".join([name] + [self._node_label(n) for n in nodes] + [self._node_type(n) for n in nodes]).lower()
-        if any(k in text for k in ("bezier", "curve", "path", "profile", "spline")):
-            return "path_or_profile_curve_region"
-        if any(k in text for k in ("bio", "biomodel", "anatom", "forearm", "radius", "ulna", "hand")):
-            return "biomodel_or_anatomical_parameter_region"
-        if any(k in text for k in ("join", "merge", "combine")):
-            return "geometry_join_or_assembly_region"
-        if any(k in text for k in ("output", "viewer")):
-            return "output_or_preview_region"
-        return "unknown_structural_region"
-
-    def _parameter_summary(self, params_result: dict[str, Any]) -> dict[str, Any]:
-        params = []
-        if params_result.get("status") == "success":
-            result = params_result.get("result", {}) if isinstance(params_result.get("result"), dict) else {}
-            params = result.get("parameters", []) if isinstance(result.get("parameters"), list) else []
-        measure_words = (
-            "radius", "raio", "diam", "width", "larg", "height", "altura", "length",
-            "compr", "espess", "thick", "circum", "scale", "size", "medida",
-        )
-        position_words = (
-            "pos", "offset", "location", "loc", "rotation", "rot", "angle", "x",
-            "y", "z", "anchor", "start", "end", "orient",
-        )
-        measures = []
-        positioning = []
-        other = []
-        for param in params:
-            if not isinstance(param, dict):
-                continue
-            name = str(param.get("name") or param.get("identifier") or "")
-            lowered = name.lower()
-            entry = {
-                "name": name,
-                "identifier": param.get("identifier", ""),
-                "socket_type": param.get("socket_type", ""),
-                "has_value": bool(param.get("has_value", False)),
-            }
-            if any(word in lowered for word in measure_words):
-                measures.append(entry)
-            elif any(
-                word in lowered if len(word) > 1 else re.search(rf"(^|[_\s.-]){re.escape(word)}($|[_\s.-])", lowered)
-                for word in position_words
-            ):
-                positioning.append(entry)
-            else:
-                other.append(entry)
-        return {
-            "parameter_count": len(params),
-            "measures": measures,
-            "positioning": positioning,
-            "other": other[:24],
-        }
-
-    def _organization_assessment(
-        self,
-        *,
-        node_count: int,
-        frame_count: int,
-        group_count: int,
-        unframed_count: int,
-    ) -> dict[str, Any]:
-        signals = {
-            "node_count": node_count,
-            "frame_count": frame_count,
-            "group_count": group_count,
-            "unframed_count": unframed_count,
-        }
-        if node_count >= 40 and frame_count == 0 and group_count < 2:
-            return {"level": "low_modularity", "signals": signals}
-        if node_count >= 80 and unframed_count > node_count * 0.65:
-            return {"level": "confusing", "signals": signals}
-        if frame_count >= 3 or group_count >= 3:
-            return {"level": "good", "signals": signals}
-        return {"level": "reasonable", "signals": signals}
 
     def _build_tree_structural_memory(
         self,
@@ -1499,12 +1351,12 @@ class RuntimeDispatcher:
         *,
         session_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        requested_tree = self._norm_text(tool_input.get("tree_name"))
+        requested_tree = _ta._norm_text(tool_input.get("tree_name"))
         resolved = self._resolve_gn_workspace(tool_input, session_state=session_state)
         if resolved.get("status") != "success":
             return resolved
         workspace = resolved.get("result", {}) if isinstance(resolved.get("result"), dict) else {}
-        tree_name = requested_tree or self._norm_text(workspace.get("selected_tree"))
+        tree_name = requested_tree or _ta._norm_text(workspace.get("selected_tree"))
         if not tree_name:
             return _json_error("No Geometry Nodes tree resolved for structural memory build.")
 
@@ -1541,43 +1393,43 @@ class RuntimeDispatcher:
                 "modifier_name": first_binding.get("modifier_name", ""),
             }
 
-        frames = [n for n in nodes if self._node_type(n) == "NodeFrame"]
-        groups = [n for n in nodes if self._node_type(n).lower() in {"geometrynodegroup", "nodegroup"}]
+        frames = [n for n in nodes if _ta._node_type(n) == "NodeFrame"]
+        groups = [n for n in nodes if _ta._node_type(n).lower() in {"geometrynodegroup", "nodegroup"}]
         nodes_by_frame: dict[str, list[dict[str, Any]]] = {}
         unframed = []
         for node in nodes:
-            parent = self._norm_text(node.get("parent_frame"))
+            parent = _ta._norm_text(node.get("parent_frame"))
             if parent:
                 nodes_by_frame.setdefault(parent, []).append(node)
-            elif self._node_type(node) != "NodeFrame":
+            elif _ta._node_type(node) != "NodeFrame":
                 unframed.append(node)
 
         regions: list[dict[str, Any]] = []
         for frame in frames:
-            name = self._norm_text(frame.get("name"))
+            name = _ta._norm_text(frame.get("name"))
             children = nodes_by_frame.get(name, [])
-            phase, phase_conf, _ = self._dominant_phase(children or [frame])
+            phase, phase_conf, _ = _ta._dominant_phase(children or [frame])
             regions.append(
                 {
                     "name": name,
-                    "label": self._norm_text(frame.get("label")),
+                    "label": _ta._norm_text(frame.get("label")),
                     "type": "frame",
-                    "probable_function": self._region_function(name, children or [frame]),
+                    "probable_function": _ta._region_function(name, children or [frame]),
                     "local_phase": phase,
                     "local_phase_confidence": phase_conf,
-                    "key_nodes": [self._norm_text(n.get("name")) for n in children if self._norm_text(n.get("name"))],
+                    "key_nodes": [_ta._norm_text(n.get("name")) for n in children if _ta._norm_text(n.get("name"))],
                     "relation_to_other_regions": "groups_child_nodes_by_parent_frame",
                 }
             )
         for group_node in groups:
-            name = self._norm_text(group_node.get("name"))
-            phase, phase_conf, _ = self._dominant_phase([group_node])
+            name = _ta._norm_text(group_node.get("name"))
+            phase, phase_conf, _ = _ta._dominant_phase([group_node])
             regions.append(
                 {
                     "name": name,
-                    "label": self._norm_text(group_node.get("label")),
+                    "label": _ta._norm_text(group_node.get("label")),
                     "type": "group",
-                    "probable_function": self._region_function(name, [group_node]),
+                    "probable_function": _ta._region_function(name, [group_node]),
                     "local_phase": phase,
                     "local_phase_confidence": phase_conf,
                     "key_nodes": [name],
@@ -1590,22 +1442,22 @@ class RuntimeDispatcher:
             if not isinstance(link, dict):
                 continue
             for key in ("from_node", "to_node"):
-                name = self._norm_text(link.get(key))
+                name = _ta._norm_text(link.get(key))
                 if name:
                     degree[name] = degree.get(name, 0) + 1
         high_degree = sorted(degree.items(), key=lambda item: item[1], reverse=True)[:10]
         key_joins = [
-            self._norm_text(n.get("name"))
+            _ta._norm_text(n.get("name"))
             for n in nodes
-            if "join" in f"{n.get('name', '')} {n.get('label', '')} {self._node_type(n)}".lower()
+            if "join" in f"{n.get('name', '')} {n.get('label', '')} {_ta._node_type(n)}".lower()
         ][:12]
         key_outputs = [
-            self._norm_text(n.get("name"))
+            _ta._norm_text(n.get("name"))
             for n in nodes
-            if "output" in f"{n.get('name', '')} {n.get('label', '')} {self._node_type(n)}".lower()
-            or self._node_type(n) == "NodeGroupOutput"
+            if "output" in f"{n.get('name', '')} {n.get('label', '')} {_ta._node_type(n)}".lower()
+            or _ta._node_type(n) == "NodeGroupOutput"
         ][:12]
-        phase, phase_conf, phase_scores = self._dominant_phase(nodes)
+        phase, phase_conf, phase_scores = _ta._dominant_phase(nodes)
         marker_payload = {
             "name": tree_name,
             "nodes": nodes,
@@ -1614,8 +1466,8 @@ class RuntimeDispatcher:
         }
         marker = self.build_tree_marker(marker_payload)
         structural_hash = self._tree_hash(marker_payload)
-        params = self._parameter_summary(self._get_tree_parameters(tree_name))
-        organization = self._organization_assessment(
+        params = _ta._parameter_summary(self._get_tree_parameters(tree_name))
+        organization = _ta._organization_assessment(
             node_count=int(inventory.get("node_count", len(nodes)) or len(nodes)),
             frame_count=len(frames),
             group_count=len(groups),
@@ -1650,7 +1502,7 @@ class RuntimeDispatcher:
             "parameters": params,
             "marker": marker,
             "structural_hash": structural_hash,
-            "built_at": self._utc_now_iso(),
+            "built_at": _ta._utc_now_iso(),
             "source_tools": [
                 "resolve_gn_workspace",
                 "list_tree_nodes",
@@ -1672,13 +1524,13 @@ class RuntimeDispatcher:
         *,
         session_state: dict[str, Any] | None,
     ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
-        requested_tree = self._norm_text(tool_input.get("tree_name"))
+        requested_tree = _ta._norm_text(tool_input.get("tree_name"))
         state = session_state if isinstance(session_state, dict) else {}
         memory_store = state.get("tree_structural_memory") if isinstance(state.get("tree_structural_memory"), dict) else {}
         memory = memory_store.get(requested_tree) if requested_tree and isinstance(memory_store.get(requested_tree), dict) else {}
         if not memory and not requested_tree:
             memory_session = state.get("session_memory") if isinstance(state.get("session_memory"), dict) else {}
-            fallback_tree = self._norm_text(memory_session.get("target_tree") or state.get("last_target_tree"))
+            fallback_tree = _ta._norm_text(memory_session.get("target_tree") or state.get("last_target_tree"))
             memory = memory_store.get(fallback_tree) if fallback_tree and isinstance(memory_store.get(fallback_tree), dict) else {}
         if memory and not bool(memory.get("stale", False)) and not bool(tool_input.get("force_refresh", False)):
             return dict(memory), {"source": "tree_structural_memory", "reused": True}, []
@@ -1692,97 +1544,12 @@ class RuntimeDispatcher:
             store = state.get("tree_structural_memory")
             if not isinstance(store, dict):
                 store = {}
-            tree_name = self._norm_text(memory.get("tree_name"))
+            tree_name = _ta._norm_text(memory.get("tree_name"))
             if tree_name:
                 store[tree_name] = dict(memory)
                 state["tree_structural_memory"] = store
         source = "rebuilt_force_refresh" if bool(tool_input.get("force_refresh", False)) else "rebuilt_missing_or_stale"
         return memory, {"source": source, "reused": False}, []
-
-    @staticmethod
-    def _tokenize_semantic_text(*values: Any) -> str:
-        return " ".join(str(v or "") for v in values).lower()
-
-    @staticmethod
-    def _match_keywords(text: str, keywords: tuple[str, ...]) -> list[str]:
-        lowered = text.lower()
-        return [kw for kw in keywords if kw in lowered]
-
-    def _semantic_phase_signals(self) -> dict[str, dict[str, Any]]:
-        return {
-            "phase_1": {
-                "label": "biomodel_and_anatomical_parameterization",
-                "keywords": (
-                    "primitive", "cube", "sphere", "cylinder", "transform", "join", "bio",
-                    "biomodel", "anatom", "forearm", "antebraco", "antebraço", "wrist",
-                    "punho", "palm", "palma", "metacarp", "metacarpo", "thumb", "polegar",
-                    "phalange", "falange", "measure", "medida", "radius", "raio", "position",
-                    "posicion", "param",
-                ),
-                "evidence_label": "anatomical primitives, joins, transforms, or measurement/position parameters",
-            },
-            "phase_2": {
-                "label": "path_and_profile_curves",
-                "keywords": (
-                    "bezier", "curve", "curva", "path", "caminho", "profile", "perfil",
-                    "spline", "anchor", "ancor", "resample", "trim",
-                ),
-                "evidence_label": "Bezier/path/profile curve logic anchored to the biomodel",
-            },
-            "phase_3": {
-                "label": "orthosis_geometry_formation",
-                "keywords": (
-                    "orthosis", "ortese", "órtese", "shell", "casca", "solidify", "thickness",
-                    "espess", "hole", "furo", "boolean", "offset", "surface", "mesh to volume",
-                    "extrude",
-                ),
-                "evidence_label": "orthosis shell, thickness, holes, boolean, or final geometry formation",
-            },
-        }
-
-    def _classify_region_phase(self, region: dict[str, Any]) -> dict[str, Any]:
-        text = self._tokenize_semantic_text(
-            region.get("name"),
-            region.get("label"),
-            region.get("probable_function"),
-            " ".join(str(n) for n in region.get("key_nodes", []) if str(n).strip()),
-        )
-        phase_signals = self._semantic_phase_signals()
-        scores: dict[str, int] = {}
-        matches_by_phase: dict[str, list[str]] = {}
-        for phase, spec in phase_signals.items():
-            matches = self._match_keywords(text, spec["keywords"])
-            scores[phase] = len(matches)
-            matches_by_phase[phase] = matches[:10]
-        total = sum(scores.values())
-        if total <= 0:
-            phase = str(region.get("local_phase") or "unknown")
-            confidence = float(region.get("local_phase_confidence") or 0.2)
-            evidence = []
-        else:
-            phase = max(scores, key=scores.get)
-            confidence = max(0.25, min(0.9, scores[phase] / max(total, 1)))
-            if phase == "phase_3":
-                confidence = min(confidence, 0.65)
-            evidence = [
-                {
-                    "phase": ph,
-                    "score": score,
-                    "matches": matches_by_phase[ph],
-                    "signal": phase_signals[ph]["evidence_label"],
-                }
-                for ph, score in scores.items()
-                if score > 0
-            ]
-        return {
-            "name": region.get("name", ""),
-            "label": region.get("label", ""),
-            "type": region.get("type", ""),
-            "phase": phase,
-            "confidence": round(confidence, 2),
-            "evidence": evidence,
-            "probable_function": region.get("probable_function", ""),
-        }
 
     def _classify_tree_phases(
         self,
@@ -1795,9 +1562,9 @@ class RuntimeDispatcher:
             return _json_error("Structural memory unavailable for phase classification.", warnings=warnings)
 
         regions = memory.get("major_regions", []) if isinstance(memory.get("major_regions"), list) else []
-        local_map = [self._classify_region_phase(r) for r in regions if isinstance(r, dict)]
-        phase_signals = self._semantic_phase_signals()
-        text = self._tokenize_semantic_text(
+        local_map = [_ta._classify_region_phase(r) for r in regions if isinstance(r, dict)]
+        phase_signals = _ta._semantic_phase_signals()
+        text = _ta._tokenize_semantic_text(
             memory.get("tree_name"),
             " ".join(str(v) for v in memory.get("key_joins", []) if str(v).strip()),
             " ".join(str(v) for v in memory.get("key_outputs", []) if str(v).strip()),
@@ -1807,7 +1574,7 @@ class RuntimeDispatcher:
         scores: dict[str, int] = {}
         evidence: list[dict[str, Any]] = []
         for phase, spec in phase_signals.items():
-            matches = self._match_keywords(text, spec["keywords"])
+            matches = _ta._match_keywords(text, spec["keywords"])
             local_hits = sum(1 for r in local_map if r.get("phase") == phase)
             score = len(matches) + local_hits
             scores[phase] = score
@@ -1858,7 +1625,7 @@ class RuntimeDispatcher:
         result = {
             "tree_name": memory.get("tree_name", ""),
             "tree_phase": dominant,
-            "confidence": self._confidence(confidence),
+            "confidence": _ta._confidence(confidence),
             "phase_scores": scores,
             "phase_evidence": evidence,
             "local_phase_map": local_map,
@@ -1873,91 +1640,6 @@ class RuntimeDispatcher:
             "warnings": warnings,
         }
         return {"status": "success", "result": result}
-
-    def _clinical_parameter_role(self, param: dict[str, Any]) -> dict[str, Any]:
-        name = self._norm_text(param.get("name") or param.get("identifier"))
-        text = name.lower()
-        measurement_roles = {
-            "forearm_length": ("antebraco", "antebraço", "forearm", "compr", "length"),
-            "wrist_radius": ("punho", "wrist", "raio", "radius"),
-            "elbow_radius": ("cotovelo", "elbow", "raio", "radius"),
-            "metacarpal_measure": ("metacarp", "metacarpo"),
-            "phalange_measure": ("phalange", "falange"),
-            "thumb_measure": ("thumb", "polegar"),
-            "width": ("larg", "width"),
-            "thickness": ("espess", "thick", "thickness"),
-            "diameter": ("diam", "diameter"),
-        }
-        positioning_roles = {
-            "radial_ulnar_deviation": ("radial", "ulnar", "desvio"),
-            "wrist_flexion_extension": ("punho", "wrist", "flex", "extens", "extension"),
-            "palm_curve": ("palma", "palm", "curva", "curve"),
-            "thumb_abduction": ("thumb", "polegar", "abduc", "abduction"),
-            "phalange_flexion_extension": ("phalange", "falange", "flex", "extens"),
-            "rotation_or_orientation": ("rot", "rotation", "orient", "angle", "angulo", "ângulo"),
-            "offset_or_anchor": ("offset", "anchor", "ancora", "âncora", "pos", "location"),
-        }
-
-        def _role_match(role_map: dict[str, tuple[str, ...]]) -> tuple[str, list[str]]:
-            best_role = ""
-            best_hits: list[str] = []
-            for role, kws in role_map.items():
-                hits = [kw for kw in kws if kw in text]
-                if len(hits) > len(best_hits):
-                    best_role = role
-                    best_hits = hits
-            return best_role, best_hits
-
-        measurement_role, measurement_hits = _role_match(measurement_roles)
-        positioning_role, positioning_hits = _role_match(positioning_roles)
-        if len(positioning_hits) > len(measurement_hits):
-            group = "positioning"
-            role = positioning_role
-            hits = positioning_hits
-        elif measurement_hits:
-            group = "measurement"
-            role = measurement_role
-            hits = measurement_hits
-        else:
-            group = "uncertain"
-            role = "unknown_clinical_role"
-            hits = []
-        confidence = 0.25 + min(0.65, 0.16 * len(hits))
-        return {
-            "name": name,
-            "identifier": param.get("identifier", ""),
-            "socket_type": param.get("socket_type", ""),
-            "group": group,
-            "role": role,
-            "confidence": round(confidence, 2),
-            "evidence": hits,
-            "has_value": bool(param.get("has_value", False)),
-        }
-
-    def _likely_regions_for_parameter(self, role: dict[str, Any], regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        text = self._tokenize_semantic_text(role.get("name"), role.get("role"))
-        out = []
-        for region in regions:
-            if not isinstance(region, dict):
-                continue
-            region_text = self._tokenize_semantic_text(
-                region.get("name"),
-                region.get("label"),
-                region.get("probable_function"),
-                " ".join(str(n) for n in region.get("key_nodes", []) if str(n).strip()),
-            )
-            name_tokens = [tok for tok in re.split(r"[^a-zA-ZÀ-ÿ0-9]+", text) if len(tok) >= 4]
-            hits = [tok for tok in name_tokens if tok.lower() in region_text]
-            if hits:
-                out.append(
-                    {
-                        "parameter": role.get("name", ""),
-                        "region": region.get("name", ""),
-                        "region_type": region.get("type", ""),
-                        "matches": hits[:8],
-                    }
-                )
-        return out[:8]
 
     def _map_clinical_parameter_roles(
         self,
@@ -1982,7 +1664,7 @@ class RuntimeDispatcher:
             seen.add(key)
             unique_params.append(param)
 
-        roles = [self._clinical_parameter_role(param) for param in unique_params]
+        roles = [_ta._clinical_parameter_role(param) for param in unique_params]
         regions = memory.get("major_regions", []) if isinstance(memory.get("major_regions"), list) else []
         measurement = [role for role in roles if role.get("group") == "measurement"]
         positioning = [role for role in roles if role.get("group") == "positioning"]
@@ -1990,7 +1672,7 @@ class RuntimeDispatcher:
         affected: list[dict[str, Any]] = []
         disconnected = []
         for role in roles:
-            matches = self._likely_regions_for_parameter(role, regions)
+            matches = _ta._likely_regions_for_parameter(role, regions)
             affected.extend(matches)
             if not matches:
                 disconnected.append(

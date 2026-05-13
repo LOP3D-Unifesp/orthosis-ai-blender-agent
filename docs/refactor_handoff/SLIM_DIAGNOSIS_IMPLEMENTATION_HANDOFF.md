@@ -651,6 +651,39 @@ Use este bloco para iniciar a próxima sessão sem reler todo o histórico.
   - `server_dispatch.py` não fatiado — requer decisão sobre abordagem (shims vs. update massivo).
   - CLAUDE.md ainda tem árvore detalhada antiga no corpo — só foi adicionado aviso no topo.
 
+## Atualização de continuidade — 2026-05-13 (extração tree_analysis.py)
+
+### Extração de helpers puros de server_dispatch.py
+
+- Criado `blender_addon/tools/tree_analysis.py` com 19 funções puras extraídas de `RuntimeDispatcher`:
+  - Helpers básicos: `_utc_now_iso`, `_confidence`, `_norm_text`, `_contains_name`, `_node_type`, `_node_label`, `_keyword_hits`, `_tokenize_semantic_text`, `_match_keywords`, `_bounded_list`
+  - Phase scoring: `_phase_scores`, `_dominant_phase`, `_region_function`
+  - Análise de parâmetros/organização: `_parameter_summary`, `_organization_assessment`
+  - Sinais semânticos e classificação: `_semantic_phase_signals`, `_classify_region_phase`
+  - Papéis clínicos: `_clinical_parameter_role`, `_likely_regions_for_parameter`
+- Nenhuma dessas funções usa `bpy.` — são seguras para teste unitário sem Blender.
+- `server_dispatch.py` importa o módulo como `_ta` e chama `_ta._method(...)` em todos os call sites.
+- Import `from datetime import datetime, timezone` removido de `server_dispatch.py` (era usado apenas por `_utc_now_iso`).
+- Resultado: `server_dispatch.py` -407 linhas (de 2161 para ~1754).
+- `185 passed`. Commit: `607039e`.
+
+### Decisão sobre server_dispatch.py
+
+- A análise anterior indicava "não fatiar — churn excede benefício" para extração de todos os 87+ call sites de helpers.
+- A extração do cluster de análise pura foi viável sem shims porque as funções extraídas não têm dependências de `self` (eram todas `@staticmethod` ou chamadas apenas a outros helpers do mesmo cluster).
+- O restante de `server_dispatch.py` (métodos com acesso a `bpy`, `_capture_*`, `_resolve_*`, `_build_*`, `_load_*`, `_classify_*` públicos, `_map_*` públicos) ainda requer `RuntimeDispatcher` por dependência de estado/bpy.
+
+### Ponto de retomada — 2026-05-13 (pós extração tree_analysis.py)
+
+- Branch worktree: `claude/stupefied-mayer-b50c9f` (commit `607039e`). Branch principal: `main` (commit `c028926`).
+- **Os commits deste worktree NÃO foram mergeados em main ainda.**
+- `185 passed`.
+- **Pendências que restam:**
+  - Mergear worktree em main (commits: limpeza dead params + extração tree_analysis).
+  - Convergência `Runtime`/`AgentRuntime` — Phase 3 arquitetural, grande.
+  - `server_dispatch.py` ainda tem ~1754 linhas — restante requer refactor mais profundo.
+  - CLAUDE.md ainda tem árvore detalhada antiga no corpo — só foi adicionado aviso no topo.
+
 ### Regras para a próxima sessão
 
 - Não reescrever do zero.

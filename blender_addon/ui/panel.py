@@ -242,6 +242,10 @@ class CHAT_PT_Panel(bpy.types.Panel):
             btn_row.operator("blend.execute_draft", text="Abrir p/ Executar", icon="PLAY")
             btn_row.operator("blend.discard_draft", text="Descartar", icon="X")
 
+            already_row = pronto_box.row()
+            already_row.scale_y = 0.9
+            already_row.operator("blend.report_result", text="Ja rodei o script pelo Text Editor", icon="FORWARD")
+
         elif work_cycle_phase == "executing":
             # ---- EXECUTANDO: waiting for user to run script ----
             exec_box = layout.box()

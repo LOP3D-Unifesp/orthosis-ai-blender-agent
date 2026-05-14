@@ -178,21 +178,11 @@ def _post_failure_strategy_count(text: str) -> int:
 def _post_failure_quality_status(text: str, evidence: dict[str, Any]) -> tuple[bool, list[str], int]:
     body = str(text or "").strip()
     strategy_count = _post_failure_strategy_count(body)
-    missing: list[str] = []
     if not body:
         return False, ["empty_response"], strategy_count
-    if len(body) < 80 and not _analysis_is_useful(body):
-        missing.append("too_sparse")
-    evidence = evidence if isinstance(evidence, dict) else {}
-    mismatches = [str(item) for item in (evidence.get("semantic_mismatches") or []) if str(item).strip()]
-    if mismatches:
-        if not _text_mentions_any(body, mismatches):
-            missing.append("static_evidence_mismatch")
-    else:
-        concrete_terms = _concrete_evidence_terms(evidence)
-        if concrete_terms and not _text_mentions_any(body, concrete_terms):
-            missing.append("concrete_static_evidence")
-    return not missing, missing, strategy_count
+    if len(body) < 80:
+        return False, ["too_sparse"], strategy_count
+    return True, [], strategy_count
 
 
 def _text_mentions_any(text: str, terms: list[str]) -> bool:

@@ -146,27 +146,27 @@ class RepairConversationLoopTests(unittest.TestCase):
         self.assertIn("só vou escrever uma nova revisão depois dessa confirmação", result.response_text)
         self.assertTrue(any(e["event_type"] == "pending_decision_proposed" for e in runtime.journal.events))
 
-    def test_static_evidence_mismatch_forces_fallback_to_use_real_mismatch(self) -> None:
+    def test_llm_response_used_when_substantive(self) -> None:
+        # Quality check now accepts any response > 80 chars — the LLM response passes
+        # through without triggering the structured fallback.
         from blender_addon.handler.feedback import handle_execution_feedback
 
-        generic = (
+        llm_response = (
             "Pode ser problema de sockets ou links.\n"
             "A. Ajustar sockets.\n"
             "B. Recriar links.\n"
             "Qual caminho?"
         )
         session = _session_with_failed_draft()
-        runtime = _Runtime(generic)
+        runtime = _Runtime(llm_response)
 
         with patch("blender_addon.handler.feedback_evidence._read_archived_draft_revision", return_value=_archived_draft()):
             result = handle_execution_feedback(_ctx(session, runtime))
 
-        self.assertIn("draft claims no falanges changed, but touched nodes/frames include falange-related names", result.response_text)
-        self.assertIn("Quer que eu siga por essa direção", result.response_text)
-        # Single positive option: upstream `_is_clear_denial` already cancels on "não",
-        # so listing "não" alongside "sim" was redundant and confused the user.
-        self.assertEqual(["sim"], session.execution_state.pending_user_decision.options)
-        self.assertEqual("repair_direction", session.execution_state.pending_user_decision.kind)
+        # LLM response has A/B options → strategy_choice decision with A and B options.
+        self.assertIn("sockets ou links", result.response_text)
+        self.assertEqual(["A", "B"], session.execution_state.pending_user_decision.options)
+        self.assertEqual("strategy_choice", session.execution_state.pending_user_decision.kind)
         payload = [e for e in runtime.journal.events if e["event_type"] == "script_draft_execution_diagnosis"][-1]["payload"]
         self.assertFalse(payload["diagnosis_missing_sections"])
         self.assertTrue(payload["diagnosis_contract_satisfied"])

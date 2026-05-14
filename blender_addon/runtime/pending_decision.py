@@ -127,7 +127,12 @@ def resolve_pending_decision(session: Any, message: str, *, runtime: Any = None)
                 es.approved_strategy_label = answered
                 es.approved_strategy_prompt = text[:500]
                 es.pending_draft_action = "write_approved_strategy_revision"
-                es.pending_draft_prompt = text[:800]
+                # Preserve existing pending_draft_prompt (diagnosis context) — append user approval.
+                existing_prompt = str(getattr(es, "pending_draft_prompt", "") or "").strip()
+                if existing_prompt and len(existing_prompt) > 100:
+                    es.pending_draft_prompt = existing_prompt[:1200] + f"\n\nUser approval: {text[:200]}"
+                else:
+                    es.pending_draft_prompt = text[:800]
         except Exception:
             pass
         _log_runtime_event(

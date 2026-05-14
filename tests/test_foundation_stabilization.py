@@ -1979,14 +1979,15 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertNotIn("TEXT_EDITOR_DRAFT_SHOULD_NOT_BE_USED", runtime.last_prompt)
         self.assertIn("[Repair conversation guidance]", runtime.last_prompt)
         self.assertNotIn("write_script_draft", runtime.tool_calls)
-        self.assertIn("draft claims no falanges changed, but touched nodes/frames include falange-related names", result.response_text)
-        self.assertIn("Quer que eu siga por essa direção", result.response_text)
+        # Quality check accepts any substantive response; LLM response passes through without fallback.
+        self.assertIn("Qual opção seguimos", result.response_text)
         self.assertIn("só vou escrever uma nova revisão depois dessa confirmação", result.response_text)
         self.assertEqual(4, session.execution_state.last_failed_revision)
         self.assertEqual("STRATEGY_PROPOSED", session.execution_state.post_failure_state)
         self.assertEqual("STRATEGY_PROPOSED", session.execution_state.session_state)
         self.assertIsNotNone(getattr(session.execution_state, "pending_user_decision", None))
-        self.assertEqual(["sim"], session.execution_state.pending_user_decision.options)
+        # LLM mock has A/B options → strategy_choice with ["A", "B"].
+        self.assertEqual(["A", "B"], session.execution_state.pending_user_decision.options)
         self.assertEqual(4, session.execution_state.proposed_strategy_revision)
         diagnosis_events = [event for event in runtime.journal.events if event["event_type"] == "script_draft_execution_diagnosis"]
         self.assertEqual("draft_history", diagnosis_events[-1]["payload"]["failed_draft_source"])

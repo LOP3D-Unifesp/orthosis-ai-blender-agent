@@ -25,11 +25,14 @@ def _build_draft_workspace_system(
     system = build_system_prompt(ctx.session, "draft_workspace", knowledge=knowledge)
     system += (
         "\n\n[DRAFT WORKSPACE]\n"
-        "You are in the unified draft workspace. Read the current draft, inspect the minimum necessary context, "
+        "You are in the unified draft workspace. Read the current draft, inspect the necessary context, "
         "and update the draft using `write_script_draft` when the turn asks for a write. "
         "Never put Python code, imports, code fences, or raw scripts in the assistant chat message. "
         "All draft code must be saved through `write_script_draft`; chat text is only for diagnosis, status, and saved revision summaries. "
-        "If writing is blocked, report the blocker in one sentence."
+        "If writing is blocked, report the blocker in one sentence.\n"
+        "IMPORTANT: Never ask the user to confirm node names, socket identifiers, connections, or parameters. "
+        "If the structural memory in this context does not answer your question, call a read tool directly — "
+        "`get_node_context`, `find_tree_nodes`, or `build_tree_structural_memory`."
     )
     system += (
         "\n\n[GN Script Conventions - MANDATORY]\n"

@@ -187,6 +187,9 @@ def handle(ctx: TurnContext) -> HandlerResult:
                 es.proposed_strategy_revision = int(current_revision or 0)
                 es.approved_strategy_label = ""
                 es.approved_strategy_prompt = ""
+                # Persist diagnosis text so the next turn (post-approval) has full strategy context.
+                if diagnosis:
+                    es.pending_draft_prompt = diagnosis[:1400]
                 use_ab = diagnosis_strategy_count >= 2
                 if use_ab:
                     decision_options = ["A", "B"]

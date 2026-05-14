@@ -193,8 +193,7 @@ def _trigger_redraw() -> None:
     try:
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
-                if area.type in ("VIEW_3D", "NODE_EDITOR"):
-                    area.tag_redraw()
+                area.tag_redraw()
     except Exception:
         pass
 

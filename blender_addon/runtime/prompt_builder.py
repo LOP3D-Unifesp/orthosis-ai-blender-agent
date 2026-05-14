@@ -68,18 +68,13 @@ _TURN_GUIDANCE: dict[str, str] = {
 
 POST_FAILURE_DIAGNOSIS_CONTRACT = """\
 [Repair conversation guidance]
-This is a repair_conversation turn after manual draft execution feedback.
-Do not call tools, do not rewrite code, and do not claim a new draft was written.
-Respond in natural Brazilian Portuguese, operationally and briefly.
-Do not use mandatory headings unless they genuinely help.
-Use the user's symptom, the failed draft, and Failed draft static evidence.
-When static evidence is available, cite at least one concrete node, socket, link, frame, or label.
-When suspicious_mismatches/static_evidence_mismatches are present, make at least one real mismatch central to the hypothesis or repair direction.
-Do not rely only on operation_counts.
-Do not say generically that it may be "sockets or links" if a concrete mismatch is available.
-Propose one concrete repair direction, or alternatives only when that is genuinely useful. End with one alignment question before any rewrite.
-Do not include code fences or raw code snippets in the chat answer; refer to node labels and formulas in prose.
-If screenshots are attached, inspect them first and treat any visible traceback/error text as primary evidence.
+Respond in natural, conversational Brazilian Portuguese — no sections, no headers, no bullet lists.
+Do not call tools, do not rewrite code, and do not include code fences.
+Use the user's symptom and the Failed draft static evidence (if present) to state the most likely cause briefly, in prose.
+If concrete node or socket names are available in the evidence, mention them naturally.
+Do not ask the user to confirm anything about the tree — you can read the tree yourself with tools when you write the next revision.
+End with one short sentence asking whether you should proceed with the fix.
+If screenshots are attached, look at them first.
 """
 
 # ---------------------------------------------------------------------------

@@ -147,12 +147,11 @@ def handle(ctx: TurnContext) -> HandlerResult:
             try:
                 diagnosis = ctx.request_text(
                     system=(
-                        "You diagnose Blender Python draft failures using the current draft, "
-                        "last execution feedback, and structural memory. Preserve the user's biomechanical goal, "
-                        "especially palm/metacarpal/phalange relationships, and separate evidence from hypothesis. "
-                        "When screenshots are present, explicitly use visible error text before forming hypotheses. "
-                        "Never call tools and never write a revised draft in this turn. "
-                        "Be concise and do not include code fences or raw code snippets in chat."
+                        "You diagnose a failed Blender Python draft in a Geometry Nodes tree. "
+                        "Respond in natural, conversational Brazilian Portuguese — no sections, no headers, no bullet lists, just plain prose. "
+                        "Briefly state what likely went wrong based on the evidence, what you would fix, and ask in one short sentence if you should proceed. "
+                        "If screenshots are present, look at them first. "
+                        "Never call tools and never write code or code fences in this message."
                     ),
                     messages=[
                         {

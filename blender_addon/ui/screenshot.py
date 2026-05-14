@@ -21,8 +21,7 @@ def _request_redraw() -> None:
     try:
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
-                if area.type in ("VIEW_3D", "NODE_EDITOR"):
-                    area.tag_redraw()
+                area.tag_redraw()
     except Exception:
         pass
 
@@ -35,7 +34,7 @@ Add-Type -AssemblyName System.Drawing
 
 [System.Windows.Forms.Clipboard]::Clear()
 Start-Process "SnippingTool.exe" "/clip" -Wait
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 800
 $img = [System.Windows.Forms.Clipboard]::GetImage()
 if ($img) {
     $path = [System.IO.Path]::Combine($env:TEMP, "blender_chat_screenshot.png")

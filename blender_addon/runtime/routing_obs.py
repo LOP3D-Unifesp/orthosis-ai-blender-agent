@@ -18,21 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-
-# ---------------------------------------------------------------------------
-# Session state labels
-# ---------------------------------------------------------------------------
-
-SESSION_STATES = frozenset({
-    "IDLE",
-    "EXPLORING",
-    "DRAFTING",
-    "PENDING_USER_EXECUTION",
-    "REPAIRING",
-    "STRATEGY_PROPOSED",
-    "STRATEGY_APPROVED",
-    "RESOLVED",
-})
+from ..session.schema import SESSION_STATES
 
 
 def infer_session_state(session: Any) -> str:

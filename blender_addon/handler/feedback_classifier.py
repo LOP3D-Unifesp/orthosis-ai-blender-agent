@@ -2,25 +2,7 @@
 
 from __future__ import annotations
 
-import unicodedata
-
-
-def _message_words(message: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKD", str(message or "").lower())
-    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
-    return normalized.split()
-
-
-def _has_prefix(words: list[str], *prefixes: str) -> bool:
-    return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
-
-
-def _has_phrase(words: list[str], *phrase_words: str) -> bool:
-    size = len(phrase_words)
-    if size == 0 or len(words) < size:
-        return False
-    return any(tuple(words[index:index + size]) == phrase_words for index in range(len(words) - size + 1))
+from ..text_utils import _has_phrase, _has_prefix, _message_words
 
 
 def _contains_ordered_groups(words: list[str], *groups: set[str]) -> bool:

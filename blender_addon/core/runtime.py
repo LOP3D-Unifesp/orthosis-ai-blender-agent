@@ -429,11 +429,12 @@ class AgentRuntime:
                 pass
 
         # --- Fast path: deterministic resolution without LLM ---
-        # Intercepts greetings, help, and simple reads
-        # before the TurnRouter.  Returns immediately when handled; falls through
-        # silently on any exception so the normal flow is never blocked.
-        # (The "awaiting_confirmation" phase guard that was here was removed in
-        # Onda 1F-B — the purge block above ensures phase is always valid here.)
+        # Intercepts greetings, help, and simple reads before the slim runtime
+        # classifier (infer_turn_intent).  Returns immediately when handled;
+        # falls through silently on any exception so the normal flow is never
+        # blocked.  (The "awaiting_confirmation" phase guard that was here was
+        # removed in Onda 1F-B — the purge block above ensures phase is always
+        # valid here.)
         try:
             from ..fast_path import try_fast_path
             _fp_result = try_fast_path(user_message, session=session, runtime=self)

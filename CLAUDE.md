@@ -51,11 +51,21 @@ Addon Blender que embute um agente Claude como copiloto de Geometry Nodes para p
 
 ## Estrutura de arquivos
 
-> Atualização rápida do slim refactor: a árvore detalhada abaixo está desatualizada em vários nomes de arquivo. A superfície viva hoje é `blender_addon/core/`, `blender_addon/handler/`, `blender_addon/runtime/`, `blender_addon/session/`, `blender_addon/tools/` e `blender_addon/ui/`. Arquivos como `agent_runtime.py`, `handlers.py`, `runtime_dispatch.py`, `tools.py`, `skill_router.py`, `runtime/handlers/` e `runtime/gn_targeting.py` não são mais a referência atual.
+> **Fonte de verdade do fluxo vivo:** `docs/refactor_handoff/LIVE_FLOW.md`. A árvore "histórica" abaixo está mantida apenas como contexto de histórico do refactor — vários arquivos listados não existem mais em `master` desde o slim refactor. **Não usar como referência operacional.**
 >
-> **tools/ fatiado (Onda 3):** `blender_addon/tools/handlers.py` é agora só uma façade (`execute_in_main_thread` + `HANDLERS`). Implementações reais vivem em: `tools/draft.py` (write/read script draft), `tools/reads.py` (focal reads: get_node_context, list_tree_nodes, find_tree_nodes, etc.), `tools/edits.py` (apply_renames, apply_collections, apply_gn_edits), `tools/execution.py` (execute_code), `tools/query.py` (query_node_types), `tools/snapshots.py` (capture_scene, capture_node_trees, capture_full). Não remover `HANDLERS` de `tools/handlers.py`; `server.py` ainda usa essa façade.
+> **Removidos / não existem mais no addon:** `agent_runtime.py`, `handlers.py` (raiz), `runtime_dispatch.py`, `tools.py` (raiz), `skill_router.py`, `runtime_agent_loop.py`, `runtime_api_client.py` (movido para `core/api_client.py`), `runtime_state_sync.py`, `session_store.py` (legacy), `simulator_mapper.py`, `knowledge_updater.py`, `execution/dispatcher.py`, `runtime/handlers/` (subpasta inteira), `runtime/staged_payload.py`, `runtime/gn_targeting.py`, `runtime/state_machine.py`, `runtime/handlers/_agent_loop.py`, `runtime/handlers/drafting.py`, `runtime/handlers/greeting.py`, `handler/_drafting_support.py`.
 >
-> **set_modes limpo (Onda 4 + 2026-05-13):** os 11 parâmetros dead de approval/control_owner foram removidos de `runtime/core.py:set_modes` (substituídos por `**_ignored`) e também do lado cliente: `blender_connection.py:runtime_set_modes` e `panel_runtime.py:send_set_modes` não enviam mais esses campos. `blender_addon/server.py` também parou de encaminhar os campos do socket para `set_modes`. `_new_plan_id`, `_rebuild_plan_from_state` e campos `approval_pending`/`plan_pending`/`control_owner_mode` do `get_session_state` também foram removidos.
+> **Superfície viva atual (2026-05-13):**
+>
+> - `blender_addon/core/` — `runtime.py` (AgentRuntime), `agent_loop.py`, `api_client.py`, `tool_policy.py`
+> - `blender_addon/handler/` — `workspace.py` (entry point único `handle(ctx, goal_mode)`), `draft_*` (state/context/prompt/response/runtime/finalize/policy), `feedback*`, `prompt.py`
+> - `blender_addon/runtime/` — `core.py` (Runtime — Phase 2), `router.py` (`infer_turn_intent`), `pending_decision.py`, `routing_obs.py`, `prompt_builder.py`, `tree_renderer.py`, `state_ops.py`
+> - `blender_addon/tools/` — façade `handlers.py:HANDLERS` + módulos reais `draft.py`, `reads.py`, `edits.py`, `execution.py`, `query.py`, `snapshots.py`, `structural.py`, `tree_analysis.py`, `schemas.py`, `client.py`, `server_dispatch.py`
+> - `blender_addon/session/` — `schema.py`, `store.py`, `chat_store.py`, `baseline.py`, `history.py`, `session_state_store.py`
+> - `blender_addon/ui/` — `panel.py`, `panel_chat_turn.py`, `panel_runtime.py`, `panel_workspace.py`, `cycle_operators.py`, `cycle_state.py`, `chat_session.py`, `chat_operators.py`, `operators.py`, `advanced.py`, `screenshot.py`, `_helpers.py`
+> - Topo do addon: `__init__.py`, `server.py` (socket bridge), `capture.py`, `safety_policy.py`, `operation_journal.py`, `snapshot_manager.py`, `model_policy.py`, `project_paths.py`, `runtime_planning.py`, `fast_path.py`, `text_utils.py` (helpers NLP consolidados, 2026-05-13)
+>
+> **Pendências grandes em aberto (não tocadas):** convergência `Runtime`/`AgentRuntime` (Phase 3), fatiamento adicional de `tools/server_dispatch.py` (~1754 linhas).
 
 ```
 blend_IA_ort/

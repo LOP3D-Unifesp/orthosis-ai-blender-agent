@@ -1,7 +1,8 @@
 """Fast paths for deterministic resolution without LLM.
 
-Intercepts specific message patterns BEFORE the TurnRouter and returns a
-response string without any API call (or with exactly one direct tool call).
+Intercepts specific message patterns before the slim runtime classifier
+(``runtime/router.infer_turn_intent``) and returns a response string without
+any API call (or with exactly one direct tool call).
 
 Entry point
 -----------
@@ -29,30 +30,9 @@ Fast paths
 from __future__ import annotations
 
 import json
-import unicodedata
 from typing import Any
 
-
-def _clean_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
-    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
-    normalized = "".join(ch if ch.isalnum() else " " for ch in normalized)
-    return " ".join(normalized.split())
-
-
-def _message_words(value: str) -> list[str]:
-    return _clean_text(value).split()
-
-
-def _has_prefix(words: list[str], *prefixes: str) -> bool:
-    return any(any(word.startswith(prefix) for prefix in prefixes) for word in words)
-
-
-def _has_phrase(words: list[str], *phrase_words: str) -> bool:
-    size = len(phrase_words)
-    if size == 0 or len(words) < size:
-        return False
-    return any(tuple(words[index:index + size]) == phrase_words for index in range(len(words) - size + 1))
+from .text_utils import _clean_text, _has_phrase, _has_prefix, _message_words
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +350,7 @@ def try_fast_path(
     """Try to resolve *message* without an LLM call.
 
     Returns ``(response_text, metadata)`` when handled; ``None`` to fall
-    through to the normal TurnRouter → handler → agent_loop flow.
+    through to the normal infer_turn_intent → workspace.handle → agent_loop flow.
 
     The ``metadata`` dict always has ``fp_type`` set to one of:
     ``"greeting"``, ``"help"``, ``"read"``.

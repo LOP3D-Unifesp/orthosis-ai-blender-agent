@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 
-_CODE_FENCE_RE = re.compile(r"```(?:python|py|bpy)?\s*\n(.*?)\n```", re.IGNORECASE | re.DOTALL)
+# Match any ``` block regardless of language specifier (including bare ```)
+_CODE_FENCE_RE = re.compile(r"```\w*\s*\n(.*?)\n```", re.IGNORECASE | re.DOTALL)
 _RAW_DRAFT_CODE_MARKER_RE = re.compile(
-    r"\b(import\s+bpy|bpy\.data|node_groups|GeometryNodeTree|write_script_draft|tree\.nodes|tree\.links)\b",
+    r"\b(import\s+bpy|bpy\.data|node_groups|GeometryNodeTree|write_script_draft|tree\.nodes|tree\.links"
+    r"|ng\.nodes|modifier\.node_group|\.node_group\s*=|nodes\.get\(|nodes\.new\(|links\.new\()",
     re.IGNORECASE,
 )
 _RAW_CODE_LINE_RE = re.compile(

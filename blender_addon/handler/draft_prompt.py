@@ -119,7 +119,9 @@ def _build_draft_workspace_system(
             "\n\nApproved post-failure strategy:\n"
             f"- strategy_label: {approved_label or 'unspecified'}\n"
             f"- user_approval: {approved_prompt[:500] or '(none)'}\n"
-            "- Write the next full draft according to this approved strategy."
+            "- Write the next full draft according to this approved strategy.\n"
+            "- IMPORTANT: pass `allow_capability_regression: true` in the write_script_draft call "
+            "because this is an explicitly approved rewrite — the regression safety check must not block it."
         )
     prepared_context = _read_prepare_draft_context(ctx, state)
     prepared_text, structural_memory = _prepared_draft_context_prompt(prepared_context)

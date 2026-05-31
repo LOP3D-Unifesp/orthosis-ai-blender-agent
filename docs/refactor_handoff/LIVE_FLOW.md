@@ -1,7 +1,8 @@
-# LIVE_FLOW.md — Fluxo vivo do addon (2026-05-13)
+# LIVE_FLOW.md — Fluxo vivo do addon (atualizado 2026-05-31)
 
-> Fonte de verdade para a estrutura atual pós-slim-refactor.
+> Fonte de verdade para a estrutura atual pós-slim-refactor (branch `slim-refactor` mergeada em `master`).
 > Atualizar aqui antes de atualizar CLAUDE.md.
+> Estado validado: `python -m pytest -q` → **185 passed** (1.2s); smoke Blender `ok: true`.
 
 ---
 
@@ -70,23 +71,25 @@ ui/panel_chat_turn.py
 
 ## 2. Arquivos centrais (live core — não tocar sem razão forte)
 
-| Arquivo | Papel | Linhas aprox. |
+| Arquivo | Papel | Linhas (wc -l) |
 |---|---|---|
-| `blender_addon/core/runtime.py` | Orquestrador de turno: fast_path, infer_turn_intent, workspace.handle, persist | ~680 |
-| `blender_addon/handler/workspace.py` | Handler unificado: GoalConfig, inquiry, draft, feedback | ~808 |
-| `blender_addon/runtime/router.py` | `infer_turn_intent` — 4 regras estruturais, sem regex | ~120 |
-| `blender_addon/fast_path.py` | Curto-circuito sem LLM: greetings, help, reads, draft_confirmation | ~393 |
-| `blender_addon/runtime/core.py` | Runtime Blender-side: session manager, dispatcher bridge | ~300 |
-| `blender_addon/session/schema.py` | `Session`, `ExecutionState`, `PendingUserDecision`, `SESSION_STATES` | ~200 |
-| `blender_addon/session/store.py` | `SessionV1Store`: JSON atômico, quarantine | ~220 |
+| `blender_addon/core/runtime.py` | Orquestrador de turno: fast_path, infer_turn_intent, workspace.handle, persist | ~1908 ⚠️ |
+| `blender_addon/handler/workspace.py` | Handler unificado: GoalConfig, inquiry, draft, feedback | ~807 |
+| `blender_addon/runtime/router.py` | `infer_turn_intent` — 4 regras estruturais | ~178 |
+| `blender_addon/fast_path.py` | Curto-circuito sem LLM: greetings, help, reads, draft_confirmation | ~392 |
+| `blender_addon/runtime/core.py` | Runtime Blender-side: session manager, dispatcher bridge | ~1274 ⚠️ |
+| `blender_addon/session/schema.py` | `Session`, `ExecutionState`, `PendingUserDecision`, `SESSION_STATES` | ~986 |
+| `blender_addon/session/store.py` | `SessionV1Store`: JSON atômico, quarantine | ~683 |
 | `blender_addon/session/chat_store.py` | `ChatHistoryStore`: JSONL append-only, fsync | ~120 |
-| `blender_addon/tools/server_dispatch.py` | Dispatcher Blender-side das ferramentas (ainda ~1754L — candidato a cortes) | ~1754 |
+| `blender_addon/tools/server_dispatch.py` | Dispatcher Blender-side das ferramentas (~1843L — candidato a cortes) | ~1843 ⚠️ |
 | `blender_addon/tools/handlers.py` | Façade HANDLERS para server.py (manter até server.py migrar) | ~50 |
-| `blender_addon/server.py` | TCP bridge Blender porta 65432 | ~250 |
-| `blender_addon/ui/panel_chat_turn.py` | Entry point do usuário + thread de turno | ~200 |
-| `blender_addon/ui/cycle_operators.py` | Operadores do ciclo: execute, run, revert, report_result | ~350 |
-| `blender_addon/runtime/pending_decision.py` | `set_pending_decision`, `resolve_pending_decision`, `_match_option` | ~120 |
-| `blender_addon/text_utils.py` | Helpers NLP compartilhados: `_message_words`, `_has_prefix`, `_has_phrase` | ~40 |
+| `blender_addon/server.py` | TCP bridge Blender porta 65432 | ~262 |
+| `blender_addon/ui/panel_chat_turn.py` | Entry point do usuário + thread de turno | ~175 |
+| `blender_addon/ui/cycle_operators.py` | Operadores do ciclo: execute, run, revert, report_result | ~306 |
+| `blender_addon/runtime/pending_decision.py` | `set_pending_decision`, `resolve_pending_decision`, `_match_option` | ~331 |
+| `blender_addon/text_utils.py` | Helpers NLP compartilhados: `_message_words`, `_has_prefix`, `_has_phrase` | ~60 |
+
+> ⚠️ `core/runtime.py` (~1908L) e `runtime/core.py` (~1274L) são os dois maiores arquivos do núcleo; ambos são candidatos à convergência na Phase 3 do slim plan. `server_dispatch.py` (~1843L) continua grande — extração incremental em andamento.
 
 ### Helpers de handler (live, mas focados)
 
@@ -137,36 +140,52 @@ ui/panel_chat_turn.py
 | `blender_addon/runtime/staged_payload.py` | **Deletado** | slim-refactor |
 | `blender_addon/tools.py` (raiz) | **Deletado** — substituído por `tools/` | slim-refactor |
 
+### Módulos removidos adicionalmente (não constam na tabela acima)
+
+| Arquivo | Status |
+|---|---|
+| `blender_addon/knowledge_updater.py` | **Deletado** — não está rastreado no git. Consequência: `knowledge/domain/learned_patterns.md` ficou órfão (existe, retriever carrega, mas está estático — 1 padrão). |
+| `blender_addon/simulator_mapper.py` | **Deletado** — não está rastreado no git. |
+
 ### Módulos congelados (existem mas não evoluir)
 
 | Arquivo | Motivo |
 |---|---|
-| `blender_addon/knowledge_updater.py` | Requer `type=="code_execution"` no journal, que nunca ocorre; congelado por design |
-| `blender_addon/simulator_mapper.py` | Feature não ativa no fluxo principal |
-| `blender_addon/runtime/routing_obs.py` | Shadow-only (observabilidade); nunca afeta dispatch |
+| `blender_addon/runtime/routing_obs.py` | Shadow-only (observabilidade); loga `routing_observation` no journal mas nunca afeta dispatch. Candidato a remoção se o journal não estiver sendo analisado ativamente. |
 
 ---
 
 ## 4. Testes relevantes
 
+> **Atenção:** a lista abaixo reflete os testes **realmente rastreados** pelo git (verificado em 2026-05-31 — `git ls-files tests/`). Os itens marcados com `⬜ ausente` são cobertura desejável ainda não criada.
+
 ```
-tests/
-├── test_text_utils.py              ← helpers NLP (message_words, has_prefix, has_phrase)
-├── test_fast_path.py               ← fast paths FP1–FP4
-├── test_router.py                  ← infer_turn_intent (4 regras)
-├── test_pending_decision.py        ← resolve_pending_decision, _match_option
-├── test_workspace.py               ← workspace.handle, GoalConfig
-├── test_feedback_classifier.py     ← _classify_execution_feedback
-├── test_feedback_evidence.py       ← evidência estática pós-falha
-├── test_session_schema.py          ← Session, ExecutionState, PendingUserDecision
-├── test_session_store.py           ← SessionV1Store (atomic write, quarantine)
-├── test_chat_store.py              ← ChatHistoryStore (append, fsync)
-├── test_dispatch_smoke.py          ← smoke de dispatch de ferramentas
-├── test_foundation_stabilization.py← clear_runtime_context, persist durability
-└── test_session_persistence_durability.py ← reopen deferido, flush antes de reload
+tests/                                                            STATUS
+├── draft_workspace_helpers.py         ← helpers de fixture compartilhados   ✅ existe
+├── test_dispatch_smoke.py             ← smoke de dispatch de ferramentas     ✅ existe
+├── test_draft_confirmation_fp4.py     ← fast path FP4 (confirmação de draft) ✅ existe
+├── test_draft_workspace_minimal_flow.py ← fluxo mínimo do workspace         ✅ existe
+├── test_foundation_stabilization.py  ← clear_runtime_context, persist       ✅ existe (3319L)
+├── test_pending_user_decision.py      ← resolve_pending_decision, _match_option ✅ existe
+├── test_repair_conversation_loop.py   ← loop de reparo pós-falha             ✅ existe
+├── test_routing_observability.py      ← routing_obs shadow mode             ✅ existe
+├── test_session_persistence_durability.py ← reopen deferido, fsync          ✅ existe
+├── test_session_store_explicit_legacy_import.py ← import legacy explícito   ✅ existe
+└── test_session_store_isolation.py    ← SessionV1Store isolation             ✅ existe
+
+Cobertura desejável ainda ausente:
+├── test_text_utils.py                 ← _message_words, _has_prefix, _has_phrase ⬜ ausente
+├── test_fast_path.py                  ← fast paths FP1–FP3                  ⬜ ausente
+├── test_router.py                     ← infer_turn_intent (4 regras)        ⬜ ausente
+├── test_workspace.py                  ← workspace.handle, GoalConfig        ⬜ ausente
+├── test_feedback_classifier.py        ← _classify_execution_feedback        ⬜ ausente
+├── test_feedback_evidence.py          ← evidência estática pós-falha        ⬜ ausente
+├── test_session_schema.py             ← Session, ExecutionState             ⬜ ausente
+├── test_session_store.py              ← SessionV1Store (atomic write)       ⬜ ausente
+└── test_chat_store.py                 ← ChatHistoryStore (append, fsync)    ⬜ ausente
 ```
 
-Rodar: `python -m pytest -q` na raiz do projeto.
+Rodar: `python -m pytest -q` na raiz do projeto → **185 passed** (1.2s, sem Blender).
 
 ---
 

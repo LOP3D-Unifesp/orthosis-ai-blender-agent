@@ -1,14 +1,10 @@
 # CLAUDE.md — blend_IA_ort
 
-> **Status de retomada em 2026-05-09:** a referência operacional atual da refatoração slim é `docs/refactor_handoff/SLIM_DIAGNOSIS_IMPLEMENTATION_HANDOFF.md`. A continuação mais recente foi feita diretamente no working tree, sem criar branch e sem commit. Último estado validado: `python -m pytest -q` com `184 passed` e smoke Blender real `ok: true` em `runtime/validation/blender_runtime_validation_1778339841.json`. Próximo passo recomendado: inventariar `session_state` / `pending_decision` e escolher a menor consolidação validável. O restante deste `CLAUDE.md` continua majoritariamente histórico até uma atualização estrutural completa.
+> **Status atualizado 2026-05-31:** slim refactor ✅ **concluído e mergeado em `master`**. Branch `slim-refactor` encerrada. Referência operacional viva do fluxo atual: `docs/refactor_handoff/LIVE_FLOW.md`. Estado validado: `python -m pytest -q` → **185 passed** (1.2s, sem Blender); smoke Blender `ok: true`. Para entender o fluxo real do sistema use `LIVE_FLOW.md` — este `CLAUDE.md` contém histórico valioso do refactor mas várias seções internas ainda descrevem o estado pré-slim. As divergências conhecidas estão marcadas ao longo do documento.
 
-> ⚠️ **Branch atual: `slim-refactor`** (criada 2026-05-06). Esta branch está executando uma refatoração enxuta que substitui ~10k linhas dos 4 módulos bloated (`drafting.py`, `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`) por ~1.7k linhas, preservando os 17 módulos que funcionam. O plano de execução é `docs/SLIM_REFACTOR_PLAN.md` — siga ele, não o resto deste documento, pra decidir o próximo passo. Este CLAUDE.md descreve o **sistema antes do refactor** e fica congelado até a Fase 7 (merge em `master`), quando será reescrito pra refletir a estrutura nova.
+> ~~**Branch `slim-refactor`**~~ **CONCLUÍDA.** Os módulos listados como "a deletar" neste CLAUDE.md já foram removidos. `docs/SLIM_REFACTOR_PLAN.md` é referência histórica; as fases estão concluídas. Divergências conhecidas neste documento: (1) seção "Fluxo de runtime" referencia módulos deletados — ver versão corrigida abaixo; (2) seção "Truncamentos" aponta para `runtime_agent_loop.py` (deletado) — ver nota na seção; (3) "Falhas conhecidas Wave 5.C" item (c) está corrigido no código; (4) "Persistência de sessão" ainda descreve três stores — o store legacy foi removido; (5) a árvore de diretórios no bloco de código a seguir é histórica, **não use como referência operacional**.
 >
-> **Status em 2026-05-07:** Fases 1–5 ✅ concluídas. 213 testes verdes. `agent_runtime.py`, `runtime_dispatch.py`, `handlers.py`, `tools.py`, `skill_router.py`, `runtime_agent_loop.py` deletados; substituídos por `core/`, `handler/`, `tools/` e `ui/` enxutos. Wave 5.C absorvida na Fase 4. Dois bugs críticos corrigidos pós-smoke (2026-05-07): (1) `_inquiry_max_rounds_for_state` não subia para 7 em REPAIRING — corrigido via `infer_session_state`; (2) aprovação bare ("pode"/"sim") em REPAIRING sem draft ativo roteava para context_inquiry — roteador agora detecta estado e envia para DRAFT_WORKSPACE. **Próximo passo: Fase 6** — smoke manual completo no Blender (ver `docs/SLIM_REFACTOR_PLAN.md` §Fase 6).
->
-> Atualizado em 2026-05-05 (estado pré-slim). Onda 5 validada parcialmente; frente pós-falha com Waves 1–3 implementadas mas com falhas sistêmicas identificadas em sessão real. Wave 5.C é absorvida pela Fase 4 do slim refactor.
-> **Fonte de verdade deste documento:** status operacional atual e regras rápidas do agente de código. Não duplicar aqui acceptance tests longos nem checklist completo.
-> **Regra de atualização durante o slim refactor:** mudanças de implementação vão pro changelog do commit; o `SLIM_REFACTOR_PLAN.md` é a referência de fases; mudanças conceituais state-driven seguem em `docs/repair_conversation_loop.md`. Este arquivo só é reescrito na Fase 7.
+> **Fonte de verdade:** `docs/refactor_handoff/LIVE_FLOW.md` para fluxo e arquivos vivos; `docs/repair_conversation_loop.md` para o loop de reparo pós-falha; este arquivo para regras do agente e contexto histórico.
 
 ---
 
@@ -156,42 +152,52 @@ blend_IA_ort/
 
 ## Fluxo de runtime: prompt → resposta
 
+> ✅ **Seção atualizada para refletir o estado pós-slim-refactor (2026-05-31).** Todos os módulos abaixo existem e estão rastreados. Fluxo detalhado com nomes de função em `docs/refactor_handoff/LIVE_FLOW.md`.
+
 ```
 [Usuário digita no painel]
         ↓
-ui/panel.py: _send_user_message()
-  - verifica session_active no V1
-  - lança thread background
+ui/panel_chat_turn.py: _send_user_message()
+  - grava mensagem no JSONL via chat_store.append()
+  - lança thread background → _run_chat_turn()
         ↓
-agent_runtime.py: run_turn()
-  1. Carrega V1 session via runtime/core.py: v1_session_for(blend_path)
-     └── journal.start_session() disparado aqui na 1ª vez com blend_path real
-  2. Carrega legacy state (session_store) — transitório
-  3. Classifica turno: TurnRouter.classify() → turn_class
-     └── routing_obs.py registra routing_observation no journal (shadow, sem mudar dispatch)
-  4. Constrói TurnContext com knowledge relevante
-  5. Despacha: dispatch_turn(turn_class, ctx)
+core/runtime.py: AgentRuntime.run_turn()
+  1. Carrega V1 session via runtime/core.py: Runtime.v1_session_for(blend_path)
+     └── journal.start_session() disparado na 1ª vez com blend_path real
+  2. Reset por turno (pending_draft_action, phase guard)
+  3. Resolve pending_decision se houver → runtime/pending_decision.py
+  4. Tenta fast_path — fast_path.py try_fast_path()
+     ├─ FP4: draft_confirmation  (draft pendente, sem LLM)
+     ├─ FP1: greetings           (respostas fixas)
+     ├─ FP2: help/capability     (texto estático)
+     └─ FP3: simple reads        (get_node_context direto)
+     Se hit → retorna imediatamente
+  5. infer_turn_intent() → (turn_class, goal_mode)
+     └── runtime/router.py (4 regras estruturais)
+  6. Observabilidade: routing_obs.py (shadow-only, sem efeito no dispatch)
+  7. handler/workspace.py: workspace.handle(ctx, goal_mode)
         ↓
-runtime/handlers/<handler>.py
-  - build_system_prompt() via prompt_builder.py
-  - ctx.call_agent_loop() → agent_loop()
+handler/workspace.py: handle(ctx, goal_mode)
+  - GoalConfig por goal_mode (inquiry / diagnose_only / focal_correction / functional_expansion / feedback_fix)
+  - Lê draft atual, injeta render da árvore, reconstrói BaselineWorkspace
+  - ctx.call_agent_loop(system_prompt, tools)
         ↓
-runtime_agent_loop.py: agent_loop()
-  - loop Claude API com tool use
+core/agent_loop.py: agent_loop()
+  - loop Anthropic API com tool use
   - resultados truncados por ferramenta (ver seção "Truncamentos")
-  - cada tool_use_block → _execute_tool() → dispatch_tool()
+  - cada tool_use_block → dispatch_tool_raw() → tools/client.py call_blender_socket()
         ↓
-tools.py: call_blender_socket()  [TCP localhost:65432]
+tools/client.py: call_blender_socket()  [TCP localhost:65432]
         ↓
 blender_addon/server.py (Blender): runtime_tool_call
-  → RuntimeDispatcher.execute() → handlers.py ou runtime_dispatch.py
+  → tools/server_dispatch.py: RuntimeDispatcher.execute()
+  → tools/{draft.py, reads.py, edits.py, execution.py, query.py, ...}
         ↓
-agent_runtime.py: run_turn() (continuação)
-  6. Atualiza histórico na sessão V1 (history.messages)
-  7. save_v1_session()
-  8. _sync_v1_to_legacy() → session_store.save()
-  9. maybe_extract_knowledge() em background
- 10. Retorna response_text → ui/panel.py
+core/runtime.py: AgentRuntime.run_turn() (continuação)
+  8. _finalize_turn(): adiciona mensagem assistant ao histórico
+  9. chat_store.append() + fsync (JSONL)
+ 10. store.save() (V1 session JSON, write atômico)
+ 11. Retorna response_text → SESSION.messages → redraw do painel
 ```
 
 ---
@@ -232,7 +238,7 @@ agent_runtime.py: run_turn() (continuação)
 ### O que existe e é rico (mas não usado adequadamente)
 
 - `capture_node_trees_snapshot()` (`capture.py:337`): snapshot completo com nós, links, interface, bindings
-- `_build_tree_structural_memory` (`runtime_dispatch.py:1279`): `major_regions[≤80]` + `key_nodes[≤12]`/região, `key_joins`, `key_outputs`, `parameters`, `structural_hash`
+- `build_tree_structural_memory` (`tools/structural.py`): `major_regions[≤80]` + `key_nodes[≤12]`/região, `key_joins`, `key_outputs`, `parameters`, `structural_hash` — função agora vive em `tools/structural.py` (antigo `runtime_dispatch.py:1279`, deletado)
 - `MAX_NODES_PER_GROUP=256` (`capture.py:25`): será ultrapassado ao atingir 400–500 nós
 
 **Caminho validado na Onda 4.E:** render compacto do snapshot/structural memory injetado no system prompt de `context_inquiry` factual e `draft_workspace`, com fallback e falha visível via journal quando a memória estrutural não está disponível.
@@ -241,7 +247,9 @@ agent_runtime.py: run_turn() (continuação)
 
 ## Truncamentos: onde o dado é cortado
 
-Todos os truncamentos acontecem em `runtime_agent_loop.py:13-32`:
+> ⚠️ **`runtime_agent_loop.py` foi deletado no slim refactor.** A lógica de truncamento está agora em `core/agent_loop.py`. Os valores abaixo refletem o estado validado (4d); verificar `core/agent_loop.py` para a implementação atual.
+
+Constantes de truncamento (migradas de `runtime_agent_loop.py` → `core/agent_loop.py`):
 
 ```python
 _MAX_TOOL_RESULT_CHARS = 6000   # ferramentas gerais
@@ -256,7 +264,7 @@ _MAX_READ_RESULT_CHARS = 4000   # ferramentas em _HEAVY_READ_TOOLS
 
 **Status 4d:** `build_tree_structural_memory` saiu de `_HEAVY_READ_TOOLS`; a ferramenta mais rica sobre a árvore agora usa o teto geral de 6000 chars.
 
-**Status 4d:** `_compress_tool_inputs_in_history` (`runtime_agent_loop.py:67`) preserva argumentos semânticos dos draft tools, e `read_script_draft` duplicado em `draft_workspace` é bloqueado quando o pipeline já leu o draft no início do turno.
+**Status 4d:** compressão de tool_use preserva argumentos semânticos dos draft tools, e `read_script_draft` duplicado em `draft_workspace` é bloqueado quando o pipeline já leu o draft no início do turno.
 
 ---
 
@@ -265,8 +273,8 @@ _MAX_READ_RESULT_CHARS = 4000   # ferramentas em _HEAVY_READ_TOOLS
 **Quando ativa:** estado `REPAIRING`, `economy_retry=True`.
 
 **O que bloqueia:**
-- Todos os broad reads (`list_tree_nodes`, `build_tree_structural_memory`, `get_scene_summary`, etc.): bloqueio **incondicional** (`agent_runtime.py:1235-1236`)
-- Focal reads (`find_tree_nodes`, `get_node_context`, etc.) agora têm orçamento mínimo em `economy_retry`: `focal_budget=3` sempre que o retry econômico está ativo (`drafting.py:1476`)
+- Todos os broad reads (`list_tree_nodes`, `build_tree_structural_memory`, `get_scene_summary`, etc.): bloqueio **incondicional** (implementado em `core/runtime.py` — antigo `agent_runtime.py:1235-1236`, deletado)
+- Focal reads (`find_tree_nodes`, `get_node_context`, etc.) agora têm orçamento mínimo em `economy_retry`: `focal_budget=3` sempre que o retry econômico está ativo (implementado em `handler/workspace.py` — antigo `drafting.py:1476`, deletado)
 
 **Caso de falha documentado** (run `run-20260428T201426Z-0894ae38.jsonl`): usuário pediu "confirma os nomes dos nós antes de escrever"; estado=REPAIRING+economy_retry; `list_tree_nodes` BLOCKED; `find_tree_nodes` BLOCKED; 3 rounds exauridos; resultado=`interrupted`; zero writes.
 
@@ -305,12 +313,12 @@ Quando o usuário reporta falha, reverte a cena, ou envia feedback negativo:
 
 **Status implementado (com ressalvas):** `handle_execution_feedback()` usa `_read_failed_draft_info()` para priorizar o arquivo arquivado; bloqueia reescrita automática no turno de falha; gera evidência estática (nós/sockets tocados, conflitos semânticos com `structural_memory`); registra `STRATEGY_PROPOSED` quando há opções válidas.
 
-**Falhas conhecidas (pendentes em Wave 5.C):**
-- `STRATEGY_PROPOSED` é colapsado para `REPAIRING` pelo FSM no mesmo run em que é definido — o turno seguinte chega em estado errado.
-- O LLM falha sistematicamente no contrato de cabeçalhos exatos; `_fallback_post_failure_diagnosis()` dispara para toda falha, produzindo resposta idêntica independente do contexto.
-- Aprovações por nome de opção ("Caminho B", "Opção A") não são reconhecidas por `infer_turn_intent()` — caem em `diagnose_only` (write_allowed=false) e nunca geram draft.
+**Status das falhas Wave 5.C (atualizado 2026-05-31):**
+- ⚠️ **Pendente:** `STRATEGY_PROPOSED`/`REPAIRING` — o estado conversacional tem dois campos espelhados (`session_state` e `post_failure_state`) que recebem os mesmos valores em paralelo; desincronização pode fazer o turno seguinte chegar em estado errado. Ver seção "Dívida técnica atual" abaixo.
+- ⚠️ **Pendente:** O LLM falha no contrato de cabeçalhos exatos; `_fallback_post_failure_diagnosis()` pode disparar para toda falha, produzindo resposta genérica. A invariante de segurança é comportamental (agente não chama `write_script_draft` no turno de falha), não tipográfica.
+- ✅ **Resolvido:** Aprovações por nome de opção ("Caminho B", "Opção A") — `_match_option()` em `runtime/pending_decision.py` agora trata ordinais ("primeiro", "segundo", "1", "2"), palavras de estratégia ("caminho", "opção", "estratégia") e letras únicas com contexto. O router (Regra 1) reconhece `pending_status=="answered"` e roteia para `DRAFT_WORKSPACE/focal_correction`.
 
-Ver `docs/repair_conversation_loop.md` para a direção arquitetural, status honesto e próximos passos (Wave 5.C).
+Ver `docs/repair_conversation_loop.md` para a direção arquitetural e o schema `PendingUserDecision`.
 
 ---
 
@@ -339,13 +347,14 @@ Ver `docs/repair_conversation_loop.md` para a direção arquitetural, status hon
 
 ## Persistência de sessão
 
-Três stores (V1 + ChatHistory são o destino final — legacy é transitório):
+Dois stores ativos (o store legacy foi removido no slim refactor):
 
 | Store | Arquivo | Conteúdo |
 |---|---|---|
-| Legacy (SessionStore) | `runtime/sessions/<hash>.session.json` | flat dict, schema 0.2 |
 | V1 (SessionV1Store) | `runtime/sessions_v1/<hash>.session.json` | identity, focus, execution_state, baseline_workspace, ui_state, session_memory — **sem messages** |
 | ChatHistory (ChatHistoryStore) | `runtime/chat_history/<session_id>.jsonl` | mensagens visíveis, append-only, uma linha JSON por mensagem |
+
+> **Legacy store removido:** `session_store.py` (flat dict, schema 0.2) foi deletado. Sessões antigas em `runtime/sessions/` ainda existem localmente mas não são mais lidas no hot path. Import só via `store.import_legacy_sessions_explicit()` — nunca automático.
 
 Comportamentos importantes:
 - `history.messages` **não** são mais gravados no session JSON — vivem apenas no JSONL
@@ -410,20 +419,64 @@ Após qualquer alteração no addon, enviar esses prompts no painel do Blender:
 
 ---
 
+## Dívida técnica atual
+
+> Esta seção documenta limitações e pendências reais identificadas pós-slim-refactor. Não são bugs críticos; são itens a considerar nas próximas ondas.
+
+### Dois runtimes coexistindo (Phase 3 pendente)
+
+`AgentRuntime` (`core/runtime.py`, ~1908L) e `Runtime` (`runtime/core.py`, ~1274L) são dois objetos distintos com ciclos de vida diferentes: o primeiro orquestra Python-side (chama a API Anthropic), o segundo é Blender-side (gerencia sessão e despacha ferramentas via socket). A convergência está documentada como Phase 3 do slim plan e ainda não foi feita. **Não fundir sem validação smoke no Blender.** Referência: `docs/SLIM_REFACTOR_PLAN.md §Phase 3`.
+
+### Redundância de estado de autorização
+
+`ExecutionState` tem múltiplos campos que representam o mesmo conceito de "aprovação do usuário" e ficam espelhados manualmente:
+- `session_state` e `post_failure_state` recebem os mesmos valores (`STRATEGY_PROPOSED`, `STRATEGY_APPROVED`) em paralelo
+- `approved_strategy_label`, `approved_strategy_prompt`, `pending_draft_action` e o objeto `pending_user_decision.answered_with` rastreiam redundantemente o estado de aprovação
+
+Desincronização entre esses campos é a causa-raiz do bug "STRATEGY_PROPOSED colapsa para REPAIRING". Solução futura (Onda 5): eliminar `post_failure_state` como campo separado; usar apenas `session_state` + `pending_user_decision`.
+
+### Fragilidade de roteamento em português
+
+`infer_turn_intent()` (`runtime/router.py:146`) usa lista fixa de prefixos de verbos PT para detectar imperativo de escrita (`escrev`, `faz`, `mud`, `cri`...). Riscos conhecidos:
+- **Falso positivo:** "faz sentido?" casa o prefixo `faz` e pode ser roteado como imperativo de escrita
+- **Semântica inconsistente:** "muda a abordagem" durante uma `PendingUserDecision` é tratado como negação/cancelamento (`pending_decision.py:291`), mas fora da decisão pendente é roteado como escrita
+- **Aprovação como pergunta:** "pode seguir com a opção A?" contém `?` → tratado como pergunta → decisão fica pendente em vez de ser aprovada
+
+A solução arquitetural correta (documentada em CLAUDE.md "O que NÃO fazer") é depender de `PendingUserDecision._match_option()`, não ampliar prefixos. O problema de falso-positivo fora de decisão pendente exige refinamento do router (Onda 4 futura).
+
+### Acoplamento Anthropic (multi-LLM é Onda 6 futura)
+
+O sistema está acoplado ao SDK Anthropic em três pontos:
+1. Instâncias `anthropic.Anthropic(api_key=...)` em `core/runtime.py` e `ui/panel_chat_turn.py`
+2. IDs de modelo hardcoded em `model_policy.py` (`claude-haiku-4-5`, `claude-sonnet-4-6`)
+3. Formato de mensagens/tool-use Anthropic em `core/api_client.py` (`messages.create/stream`, `cache_control: ephemeral`)
+
+O ponto de costura natural para abstração multi-LLM é `core/api_client.py` — já é um adaptador fino. **Não alterar sem uma implementação de provider fake nos testes.**
+
+### Diretório `skills/` ausente
+
+`tools/server_dispatch.py` tenta importar `skills.scene_context_inspector` e `skills.gn_scene_state_interpreter`. Não há `skills/` no repositório. Há fallback local (`_build_local_gn_report`, `_build_local_scene_report`) — o sistema não quebra, mas a funcionalidade "rica" de relatórios degrada silenciosamente. O README de instalação futuro deve documentar que `skills/` é um diretório opcional a apontar no campo "Project Root Path".
+
+### Projeto não está pronto para GitHub público
+
+Falta para publicação: README de topo, instruções de instalação (incluindo `pip install anthropic` no Python do Blender), `requirements.txt` ou equivalente, `LICENSE`, e exemplos de uso. Ver **Onda 2** do plano de refatoração.
+
+---
+
 ## O que NÃO fazer
 
 ### Arquitetura
 
-- Não recriar `skill_router.py` ou `safety_policy.py` — já existem e são usados
+- Não recriar `skill_router.py` — foi **deletado** no slim refactor; o roteamento é feito por `runtime/router.py:infer_turn_intent()`
+- Não recriar `safety_policy.py` separado — a política vive em `core/tool_policy.py` (`BLOCKED_PRODUCT_TOOLS`, `DraftAttemptContract`)
 - Não usar MCP como canal principal — socket direto (porta 65432) é o padrão
 - Não criar Verifier como classe separada
-- Não adicionar regex no router — quando der vontade, é sinal de que falta estado (resolvido por `PendingUserDecision`; ver `docs/repair_conversation_loop.md`)
-- Não adicionar mais regex a `infer_turn_intent()` para reconhecer aprovações de estratégia — a solução é `PendingUserDecision.match(options)` (Wave 5.C), não ampliar listas de palavras
+- Não adicionar mais listas de vocabulário fixo a `infer_turn_intent()` para reconhecer aprovações — a solução é `PendingUserDecision._match_option()` (já implementada), não ampliar prefixos de palavras
 - Não emitir pergunta de decisão manualmente no texto. Usar `set_pending_decision()`; pergunta A/B sem `PendingUserDecision` é bug arquitetural, não detalhe opcional
-- Não criar dois sistemas de estado em paralelo — `state_machine.py` é legado e será deletado na Fase 1 do slim refactor
-- Não chamar `execute_code` ou `make_plan` automaticamente no loop do agente — são user-triggered
+- Não recriar `state_machine.py` — foi **deletado** no slim refactor; a máquina de estados está em `session/schema.py:SESSION_STATES` + `runtime/pending_decision.py`
+- Não chamar `execute_code`, `make_plan` ou `apply_simulator_payload` automaticamente no loop do agente — são `BLOCKED_PRODUCT_TOOLS` (user-triggered)
 - Não reintroduzir ferramentas GN atômicas (`create_node`, `connect_nodes`, `set_node_value`, etc.)
-- Não exigir formato de seções exatas (Sintoma/Hipótese/Evidência/Confiança/Limitações/Opções/Pergunta) no prompt de diagnóstico pós-falha — o LLM falha sistematicamente e o fallback produz template idêntico para toda falha; a invariante de segurança é comportamental, não tipográfica
+- Não exigir formato de seções exatas (Sintoma/Hipótese/Evidência/Confiança/Limitações/Opções/Pergunta) no prompt de diagnóstico pós-falha — a invariante de segurança é comportamental, não tipográfica
 
 ### Contexto / memória de árvore
 
@@ -445,17 +498,17 @@ Após qualquer alteração no addon, enviar esses prompts no painel do Blender:
 
 ### knowledge_updater
 
-- `knowledge_updater.py` está **congelado por design**: requer eventos `type=="code_execution"` no journal, que nunca ocorrem porque `execute_code` é bloqueado no fluxo automático. **Não "consertar"** sem antes decidir se o loop de aprendizado automático vale reativar e como lidar com execução manual fora do agente loop.
+- `knowledge_updater.py` foi **deletado** no slim refactor e não está mais rastreado no git. Não recriar sem uma decisão explícita de reativar o loop de aprendizado automático. Consequência: `knowledge/domain/learned_patterns.md` está **órfão** — ainda existe e o retriever o carrega, mas está estático (1 padrão); o mecanismo que o gerava foi removido. Para manter o arquivo útil, editar manualmente com padrões curados.
 
 ---
 
 ## Refactor em andamento
 
-**Branch `slim-refactor` (2026-05-06):** o plano de 8 ondas foi substituído por um refactor enxuto de 7 fases. Ver `docs/SLIM_REFACTOR_PLAN.md` — única referência de execução desta branch. Wave 5.C é absorvida pela Fase 4. As Ondas 1–4 já foram entregues e ficam preservadas como módulos `tree_renderer`, `BaselineWorkspace`, `OperationJournal`, `ChatHistoryStore`, `snapshot_manager`. Ondas 5 (parcial), 6 (Working Memory) e 7 (state machine formal) ficam adiadas e podem ser retomadas depois do merge slim.
+**~~Branch `slim-refactor`~~ CONCLUÍDO (2026-05-06 a 2026-05-31):** o plano de 7 fases substituiu ~10k linhas dos 4 módulos bloated por uma estrutura enxuta em `core/`, `handler/`, `tools/` e `ui/`. Ver `docs/SLIM_REFACTOR_PLAN.md` como referência histórica do plano. As Ondas 1–4 estão entregues; os módulos `tree_renderer`, `BaselineWorkspace`, `OperationJournal`, `ChatHistoryStore`, `snapshot_manager` foram preservados. Ondas 5 (parcial), 6 (Working Memory) e 7 (state machine formal) ficam adiadas para o futuro.
 
-Ver `docs/repair_conversation_loop.md` para a frente de reparo conversacional pós-falha — direção arquitetural, falhas sistêmicas identificadas e schema de `PendingUserDecision` (consumido pela Fase 4 do slim refactor).
+Ver `docs/repair_conversation_loop.md` para a frente de reparo conversacional pós-falha — direção arquitetural, falhas sistêmicas identificadas e schema de `PendingUserDecision`.
 
-**Estado atual: Ondas 1–3 concluídas ✅ — Onda 4a–4d implementadas ✅ — Onda 4.E validada no Blender/journal ✅ — Onda 5 validada parcialmente 🔶 — Frente pós-falha Waves 1–3 implementadas com falhas sistêmicas conhecidas 🔶 — Wave 5.C (camada de estado conversacional) pendente ⬜ — Wave 4 UI pendente ⬜**
+**Estado consolidado pós-merge (2026-05-31): Ondas 1–3 ✅ — Onda 4a–4d ✅ — Onda 4.E validada no Blender ✅ — Onda 5 UI parcial ✅ — Frente pós-falha Wave 5.C parcialmente resolvida 🔶 (aprovação de opções A/B resolvida ✅; espelhamento session_state/post_failure_state pendente ⚠️) — Working Memory e state machine formal adiados ⬜**
 
 **Hotfix de UX (2026-04-29):** após teste manual frustrante no Blender, o painel passou a sanitizar blocos de código Python em mensagens finais do assistente e no histórico carregado. O roteador também reconhece "escreve um draft" / "escreve um script" como `draft_workspace`, evitando que pedidos de escrita caiam em `context_inquiry` e despejem código no chat.
 
@@ -555,4 +608,4 @@ Naquele momento, o designer podia usar "Só Enviar" (feedback sem revert) e "Só
 - `handle_execution_feedback()` agora prioriza `draft_history`, bloqueia reescrita automática no turno de falha e registra `STRATEGY_PROPOSED` quando há opções válidas.
 - Pacote de evidência estática pós-falha identifica nós/sockets tocados, links alterados, leituras de interface, referências ausentes e conflitos semânticos com `structural_memory`.
 - Testes focados de estabilização passaram (`Ran 72 tests ... OK`). A suite completa ainda pode esbarrar em testes não relacionados que dependem de tempfile/permissão no sandbox.
-- **Falhas sistêmicas identificadas em sessão real (sess-20260429T143019Z-e909c754, runs de 2026-05-04):** (a) `STRATEGY_PROPOSED` colapsa para `REPAIRING` no mesmo run pelo FSM — aprovação do turno seguinte chega em estado errado; (b) LLM falha no contrato de cabeçalhos exatos → `_fallback_post_failure_diagnosis()` dispara para toda falha, template genérico idêntico; (c) "Caminho B" / "Opção A" não reconhecidos por `infer_turn_intent()` → `diagnose_only`, sem escrita. Próximo passo: Wave 5.C.
+- **Falhas sistêmicas identificadas em sessão real (sess-20260429T143019Z-e909c754, runs de 2026-05-04):** (a) ⚠️ `STRATEGY_PROPOSED`/`REPAIRING` — espelhamento de `session_state`/`post_failure_state` pode causar dessincronização (ver "Dívida técnica atual" abaixo); (b) ⚠️ LLM falha no contrato de cabeçalhos → `_fallback_post_failure_diagnosis()` pode disparar para toda falha; (c) ✅ **RESOLVIDO** — "Caminho B" / "Opção A" agora reconhecidos via `_match_option()` em `runtime/pending_decision.py`.

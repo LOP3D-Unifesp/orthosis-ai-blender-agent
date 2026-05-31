@@ -34,7 +34,7 @@ core/runtime.py  AgentRuntime.run_turn()
        │   Regra 3: padrões de diagnóstico+retry → DRAFT_WORKSPACE / focal_correction
        │   Regra 4: imperativos de escrita → DRAFT_WORKSPACE / focal_correction
        │   Default: CONTEXT_INQUIRY / inquiry
-    8. Routing observability log (routing_obs.py — shadow, sem efeito em dispatch)
+    8. Routing observability log (routing_obs.py — loga journal; também fornece infer_session_state/compute_shadow_handler usados no handler)
     9. handler/workspace.py  workspace.handle(ctx, goal_mode)
         ↓
 handler/workspace.py  handle(ctx, goal_mode)
@@ -151,7 +151,7 @@ ui/panel_chat_turn.py
 
 | Arquivo | Motivo |
 |---|---|
-| `blender_addon/runtime/routing_obs.py` | Shadow-only (observabilidade); loga `routing_observation` no journal mas nunca afeta dispatch. Candidato a remoção se o journal não estiver sendo analisado ativamente. |
+| `blender_addon/runtime/routing_obs.py` | **Parcialmente live.** Exporta `infer_session_state` (importado em `handler/workspace.py:216`) e `compute_shadow_handler` (importado em `core/runtime.py:558`). Também loga `routing_observation` no journal (observabilidade). Não é shadow-only — remover requer redirecionar os dois imports. |
 
 ---
 
@@ -217,8 +217,8 @@ A seção "Estrutura de arquivos" tem o preamble atualizado apontando para este 
 
 ### Baixo risco — pode fazer em qualquer sessão
 
-1. **`blender_addon/runtime/routing_obs.py` — remover se nunca lido em prod**
-   Shadow-only: loga routing_observation no journal mas não afeta dispatch. Se o journal não estiver sendo analisado ativamente, o módulo é custo puro.
+1. **`blender_addon/runtime/routing_obs.py` — consolidar, não remover diretamente**
+   Exporta duas funções live (`infer_session_state` em `handler/workspace.py:216`, `compute_shadow_handler` em `core/runtime.py:558`) além do logging de observabilidade. Não é candidato à remoção sem antes mover essas funções para `runtime/router.py` ou `runtime/state_ops.py` e atualizar os imports.
 
 2. **`blender_addon/tools/server_dispatch.py` — continuar extração de helpers puros**
    Padrão já validado com `tree_analysis.py`. Identificar próximo cluster de funções puras (ex: helpers de snapshot, helpers de interface) e extrair para módulos focados. Testar com `pytest -q` após cada extração.

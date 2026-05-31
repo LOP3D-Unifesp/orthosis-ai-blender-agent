@@ -7,7 +7,7 @@ lang: pt
 ---
 # Padrões Aprendidos — Geometry Nodes
 
-> Gerado automaticamente pelo knowledge_updater.
+> **Curado manualmente.** O `knowledge_updater.py` que gerava este arquivo foi removido; novos padrões devem ser adicionados à mão.
 > Cada padrão foi extraído de uma sessão bem-sucedida.
 
 ---

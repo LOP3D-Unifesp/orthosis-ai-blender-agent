@@ -3,6 +3,14 @@
 /blender_addon/runtime/journal/
 /blender_addon/runtime/sessions/
 /blender_addon/runtime/sessions_v1/
+# Belt-and-suspenders: chat_history and draft_history currently go to /runtime/ (covered above),
+# but explicit entries guard against future path changes.
+/blender_addon/runtime/chat_history/
+/blender_addon/runtime/draft_history/
+
+# Environment / secrets — never commit API keys or local paths
+.env
+*.env
 
 # Python bytecode
 **/__pycache__/
@@ -27,3 +35,4 @@ Thumbs.db
 # Local temp dirs
 tmpn1o45sw2/
 tmp*/
+.claire/

@@ -1,0 +1,21 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Development and testing (install in your normal Python environment)
+# ──────────────────────────────────────────────────────────────────────────────
+pytest
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MCP server — alternate integration path (server.py + blender_connection.py)
+# Only needed if you run the optional MCP adapter outside Blender.
+# ──────────────────────────────────────────────────────────────────────────────
+mcp
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Blender addon (blender_addon/) — PRIMARY path
+#
+# `anthropic` must be installed INSIDE Blender's bundled Python interpreter,
+# NOT via this file. See README.md § Installation for the correct command.
+#
+# Do NOT install `bpy` here; it is bundled with Blender.
+# ──────────────────────────────────────────────────────────────────────────────
+# anthropic  ← install separately inside Blender's Python:
+#              <blender_python> -m pip install anthropic

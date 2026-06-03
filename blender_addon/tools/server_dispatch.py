@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from . import draft, execution, handlers, query, reads, snapshots, tree_analysis as _ta
+from . import biomodel_source, draft, execution, handlers, query, reads, snapshots, tree_analysis as _ta
 from ..project_paths import canonical_project_root
 
 
@@ -407,6 +407,8 @@ class RuntimeDispatcher:
         "prepare_draft_context":       "_tool_prepare_draft_context",
         "resolve_gn_workspace":        "_tool_resolve_gn_workspace",
         "build_tree_structural_memory": "_tool_build_tree_structural_memory",
+        "inspect_tree_inventory":     "_tool_inspect_tree_inventory",
+        "export_tree_inventory":      "_tool_export_tree_inventory",
         "classify_tree_phases":        "_tool_classify_tree_phases",
         "map_clinical_parameter_roles": "_tool_map_clinical_parameter_roles",
         "get_node_context":            "_tool_get_node_context",
@@ -422,6 +424,7 @@ class RuntimeDispatcher:
         "query_node_types":            "_tool_query_node_types",
         "write_script_draft":          "_tool_write_script_draft",
         "read_script_draft":           "_tool_read_script_draft",
+        "seed_biomodel_source":        "_tool_seed_biomodel_source",
     }
 
     def __init__(self):
@@ -476,6 +479,12 @@ class RuntimeDispatcher:
 
     def _tool_build_tree_structural_memory(self, tool_input, *, session_state=None, **_):
         return self._build_tree_structural_memory(tool_input, session_state=session_state)
+
+    def _tool_inspect_tree_inventory(self, tool_input, *, session_state=None, **_):
+        return self._inspect_tree_inventory(tool_input, session_state=session_state)
+
+    def _tool_export_tree_inventory(self, tool_input, *, session_state=None, **_):
+        return self._export_tree_inventory(tool_input, session_state=session_state)
 
     def _tool_classify_tree_phases(self, tool_input, *, session_state=None, **_):
         return self._classify_tree_phases(tool_input, session_state=session_state)
@@ -541,6 +550,15 @@ class RuntimeDispatcher:
     def _tool_read_script_draft(self, tool_input, **_):
         return draft.handle_read_script_draft(tool_input)
 
+    def _tool_seed_biomodel_source(self, tool_input, *, session_state=None, **_):
+        payload = dict(tool_input or {})
+        state = session_state if isinstance(session_state, dict) else {}
+        if state.get("_runtime_project_root"):
+            payload.setdefault("project_root", state.get("_runtime_project_root"))
+        if state.get("session_id"):
+            payload.setdefault("session_id", state.get("session_id"))
+        return biomodel_source.handle_seed_biomodel_source(payload)
+
     @staticmethod
     def _tree_hash(tree_data: dict[str, Any]) -> str:
         payload = json.dumps(
@@ -549,6 +567,544 @@ class RuntimeDispatcher:
             ensure_ascii=False,
         )
         return hashlib.md5(payload.encode("utf-8")).hexdigest()[:12]
+
+    @staticmethod
+    def _page_items(items: list[Any], *, offset: int, limit: int) -> dict[str, Any]:
+        total = len(items)
+        offset = max(0, min(int(offset or 0), total))
+        limit = max(1, min(int(limit or 40), 120))
+        end = min(total, offset + limit)
+        return {
+            "offset": offset,
+            "limit": limit,
+            "count": max(0, end - offset),
+            "total": total,
+            "next_offset": end if end < total else None,
+            "items": items[offset:end],
+        }
+
+    @staticmethod
+    def _compact_inventory_node(node: dict[str, Any]) -> dict[str, Any]:
+        entry = {
+            "name": _ta._norm_text(node.get("name")),
+            "label": _ta._norm_text(node.get("label")),
+            "type": _ta._norm_text(node.get("type") or node.get("bl_idname")),
+            "parent_frame": _ta._norm_text(node.get("parent_frame")),
+            "location": node.get("location", []),
+        }
+        properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+        if properties:
+            entry["properties"] = properties
+        inputs = node.get("input_values") if isinstance(node.get("input_values"), list) else []
+        if inputs:
+            compact_inputs = []
+            for sock in inputs[:16]:
+                if not isinstance(sock, dict):
+                    continue
+                compact = {
+                    "name": _ta._norm_text(sock.get("name")),
+                    "type": _ta._norm_text(sock.get("type")),
+                }
+                if "default_value" in sock:
+                    compact["default_value"] = sock.get("default_value")
+                compact_inputs.append(compact)
+            if compact_inputs:
+                entry["inputs"] = compact_inputs
+        return entry
+
+    @staticmethod
+    def _node_semantic_text(node: dict[str, Any]) -> str:
+        return " ".join(
+            _ta._norm_text(value)
+            for value in (
+                node.get("name"),
+                node.get("label"),
+                node.get("type"),
+                node.get("parent_frame"),
+            )
+            if _ta._norm_text(value)
+        ).lower()
+
+    def _inventory_regions(self, inventory: dict[str, Any]) -> list[dict[str, Any]]:
+        nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+        frames = [node for node in nodes if isinstance(node, dict) and _ta._norm_text(node.get("type")) == "NodeFrame"]
+        children_by_frame: dict[str, list[dict[str, Any]]] = {}
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            parent = _ta._norm_text(node.get("parent_frame"))
+            if parent:
+                children_by_frame.setdefault(parent, []).append(node)
+        regions: list[dict[str, Any]] = []
+        for frame in frames:
+            name = _ta._norm_text(frame.get("name"))
+            children = children_by_frame.get(name, [])
+            phase, phase_conf, _scores = _ta._dominant_phase(children or [frame])
+            regions.append({
+                "name": name,
+                "label": _ta._norm_text(frame.get("label")),
+                "type": "frame",
+                "child_count": len(children),
+                "probable_function": _ta._region_function(name, children or [frame]),
+                "phase_hint": phase,
+                "phase_confidence": phase_conf,
+                "key_nodes": [_ta._norm_text(node.get("name")) for node in children[:24] if _ta._norm_text(node.get("name"))],
+            })
+        group_nodes = [
+            node for node in nodes
+            if isinstance(node, dict) and _ta._norm_text(node.get("type")).lower() in {"geometrynodegroup", "nodegroup"}
+        ]
+        for node in group_nodes:
+            name = _ta._norm_text(node.get("name"))
+            phase, phase_conf, _scores = _ta._dominant_phase([node])
+            regions.append({
+                "name": name,
+                "label": _ta._norm_text(node.get("label")),
+                "type": "group_node",
+                "child_count": 1,
+                "probable_function": _ta._region_function(name, [node]),
+                "phase_hint": phase,
+                "phase_confidence": phase_conf,
+                "key_nodes": [name] if name else [],
+            })
+        return regions
+
+    def _inventory_anchor_candidates(self, inventory: dict[str, Any]) -> list[dict[str, Any]]:
+        nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+        links = inventory.get("links", []) if isinstance(inventory.get("links"), list) else []
+        degree: dict[str, int] = {}
+        for link in links:
+            if not isinstance(link, dict):
+                continue
+            for key in ("from_node", "to_node"):
+                name = _ta._norm_text(link.get(key))
+                if name:
+                    degree[name] = degree.get(name, 0) + 1
+        anchor_words = (
+            "anchor", "ancora", "âncora", "punho", "wrist", "metacarpo",
+            "metacarp", "antebraco", "antebraço", "forearm", "cotovelo",
+            "elbow", "palm", "palma", "thumb", "polegar", "radial", "ulnar",
+            "axis", "eixo", "position", "posicao", "posição",
+        )
+        candidates: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            name = _ta._norm_text(node.get("name"))
+            text = self._node_semantic_text(node)
+            hits = [word for word in anchor_words if word in text]
+            if not hits and degree.get(name, 0) < 4:
+                continue
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            candidates.append({
+                "name": name,
+                "label": _ta._norm_text(node.get("label")),
+                "type": _ta._norm_text(node.get("type")),
+                "parent_frame": _ta._norm_text(node.get("parent_frame")),
+                "signals": hits[:8] + ([f"degree={degree.get(name, 0)}"] if degree.get(name, 0) >= 4 else []),
+                "confidence": "high" if hits else "medium",
+            })
+        return candidates[:80]
+
+    @staticmethod
+    def _inventory_invariant_candidates(inventory: dict[str, Any], regions: list[dict[str, Any]]) -> list[dict[str, str]]:
+        interface = inventory.get("interface") if isinstance(inventory.get("interface"), dict) else {}
+        outputs = interface.get("outputs", []) if isinstance(interface.get("outputs"), list) else []
+        inputs = interface.get("inputs", []) if isinstance(interface.get("inputs"), list) else []
+        invariants = [
+            {
+                "name": "generated_tree_has_geometry_output",
+                "rule": "The generated biomodel tree must keep at least one Geometry output socket.",
+                "evidence": "Group interface outputs from the inspected tree.",
+            },
+            {
+                "name": "canonical_parameters_keep_identifiers",
+                "rule": "Clinical interface parameters should preserve stable identifiers or be migrated explicitly.",
+                "evidence": f"{len(inputs)} input sockets found in the inspected interface.",
+            },
+            {
+                "name": "regions_remain_connected",
+                "rule": "Major anatomical/geometric regions should remain connected to the final assembly path.",
+                "evidence": f"{len(regions)} frame/group region candidates found.",
+            },
+            {
+                "name": "source_generation_is_non_destructive",
+                "rule": "Early biomodel-source prototypes should generate a separate tree instead of mutating the clinical tree directly.",
+                "evidence": "Migration branch strategy.",
+            },
+        ]
+        has_geometry_output = any(
+            "geometry" in f"{item.get('name', '')} {item.get('socket_type', '')}".lower()
+            for item in outputs
+            if isinstance(item, dict)
+        )
+        if not has_geometry_output:
+            invariants[0]["evidence"] = "No explicit Geometry output socket was detected; verify output naming before source migration."
+        return invariants
+
+    def _inspect_tree_inventory(
+        self,
+        tool_input: dict[str, Any],
+        *,
+        session_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        section = _ta._norm_text(tool_input.get("section") or "overview").lower()
+        if section not in {"overview", "parameters", "regions", "nodes", "links", "anchors", "invariants"}:
+            return _json_error("Invalid section. Use overview, parameters, regions, nodes, links, anchors, or invariants.")
+        requested_tree = _ta._norm_text(tool_input.get("tree_name"))
+        resolved = self._resolve_gn_workspace(tool_input, session_state=session_state)
+        if resolved.get("status") != "success":
+            return resolved
+        workspace = resolved.get("result", {}) if isinstance(resolved.get("result"), dict) else {}
+        tree_name = requested_tree or _ta._norm_text(workspace.get("selected_tree"))
+        if not tree_name:
+            return _json_error("No Geometry Nodes tree resolved for full inventory inspection.")
+
+        inventory_raw = reads.handle_get_tree_inventory({
+            "tree_name": tree_name,
+            "include_values": bool(tool_input.get("include_values", True)),
+            "include_properties": bool(tool_input.get("include_properties", True)),
+        })
+        if inventory_raw.get("status") != "success":
+            return inventory_raw
+        inventory = inventory_raw.get("result", {}) if isinstance(inventory_raw.get("result"), dict) else {}
+        nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+        links = inventory.get("links", []) if isinstance(inventory.get("links"), list) else []
+        interface = inventory.get("interface") if isinstance(inventory.get("interface"), dict) else {}
+        regions = self._inventory_regions(inventory)
+        anchors = self._inventory_anchor_candidates(inventory)
+        invariants = self._inventory_invariant_candidates(inventory, regions)
+        params_result = self._get_tree_parameters(tree_name)
+        live_parameters = (
+            params_result.get("result", {}).get("parameters", [])
+            if params_result.get("status") == "success" and isinstance(params_result.get("result"), dict)
+            else []
+        )
+        totals = {
+            "nodes": int(inventory.get("node_count", len(nodes)) or len(nodes)),
+            "links": int(inventory.get("link_count", len(links)) or len(links)),
+            "frames": int(inventory.get("frame_count", 0) or 0),
+            "groups": int(inventory.get("group_count", 0) or 0),
+            "unframed": int(inventory.get("unframed_count", 0) or 0),
+            "interface_inputs": len(interface.get("inputs", [])) if isinstance(interface.get("inputs"), list) else 0,
+            "interface_outputs": len(interface.get("outputs", [])) if isinstance(interface.get("outputs"), list) else 0,
+            "live_modifier_parameters": len(live_parameters) if isinstance(live_parameters, list) else 0,
+            "region_candidates": len(regions),
+            "anchor_candidates": len(anchors),
+        }
+        offset = int(tool_input.get("offset", 0) or 0)
+        limit = int(tool_input.get("limit", 40) or 40)
+        pages = {
+            "nodes": {"total": len(nodes), "suggested_limit": 40},
+            "links": {"total": len(links), "suggested_limit": 60},
+            "regions": {"total": len(regions), "suggested_limit": 30},
+            "anchors": {"total": len(anchors), "suggested_limit": 30},
+        }
+        result: dict[str, Any] = {
+            "schema_version": "tree_inventory_inspection.v1",
+            "tree_name": tree_name,
+            "section": section,
+            "workspace": workspace,
+            "totals": totals,
+            "pages": pages,
+            "inspection_policy": {
+                "full_tree_read": True,
+                "raw_inventory_source": "direct_bpy_node_group_read",
+                "paginated_for_model_context": True,
+                "does_not_execute_or_mutate": True,
+            },
+        }
+        if section == "overview":
+            phase, phase_conf, phase_scores = _ta._dominant_phase(nodes)
+            result["overview"] = {
+                "phase_dominant": phase,
+                "phase_confidence": phase_conf,
+                "phase_scores": phase_scores,
+                "organization": _ta._organization_assessment(
+                    node_count=totals["nodes"],
+                    frame_count=totals["frames"],
+                    group_count=totals["groups"],
+                    unframed_count=totals["unframed"],
+                ),
+                "region_sample": regions[:12],
+                "anchor_sample": anchors[:12],
+                "invariant_sample": invariants,
+                "next_sections": ["parameters", "regions", "nodes", "links", "anchors", "invariants"],
+            }
+        elif section == "parameters":
+            result["interface"] = interface
+            result["live_modifier_parameters"] = live_parameters
+            result["parameter_summary"] = _ta._parameter_summary(params_result)
+        elif section == "regions":
+            result["page"] = self._page_items(regions, offset=offset, limit=limit)
+        elif section == "nodes":
+            compact_nodes = [self._compact_inventory_node(node) for node in nodes if isinstance(node, dict)]
+            result["page"] = self._page_items(compact_nodes, offset=offset, limit=limit)
+        elif section == "links":
+            result["page"] = self._page_items(links, offset=offset, limit=limit)
+        elif section == "anchors":
+            result["page"] = self._page_items(anchors, offset=offset, limit=limit)
+        elif section == "invariants":
+            result["invariants"] = invariants
+        return {"status": "success", "result": result}
+
+    @staticmethod
+    def _safe_artifact_name(value: Any, *, fallback: str = "tree") -> str:
+        text = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value or "").strip())
+        text = text.strip("._-")
+        return text[:80] or fallback
+
+    @staticmethod
+    def _project_root_for_artifact(tool_input: dict[str, Any], session_state: dict[str, Any]) -> Path:
+        raw = (
+            _ta._norm_text(tool_input.get("project_root"))
+            or _ta._norm_text(session_state.get("_runtime_project_root"))
+        )
+        if raw:
+            try:
+                return Path(raw).expanduser().resolve()
+            except Exception:
+                pass
+        return canonical_project_root().resolve()
+
+    @staticmethod
+    def _format_markdown_table(headers: list[str], rows: list[list[Any]]) -> str:
+        def _cell(value: Any) -> str:
+            text = str(value if value is not None else "").replace("\n", " ").replace("|", "\\|")
+            return text[:240]
+
+        if not headers:
+            return ""
+        lines = [
+            "| " + " | ".join(_cell(item) for item in headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+        ]
+        for row in rows:
+            lines.append("| " + " | ".join(_cell(item) for item in row) + " |")
+        return "\n".join(lines)
+
+    def _tree_inventory_markdown(self, payload: dict[str, Any]) -> str:
+        tree_name = _ta._norm_text(payload.get("tree_name"))
+        totals = payload.get("totals") if isinstance(payload.get("totals"), dict) else {}
+        interface = payload.get("interface") if isinstance(payload.get("interface"), dict) else {}
+        live_parameters = payload.get("live_modifier_parameters") if isinstance(payload.get("live_modifier_parameters"), list) else []
+        regions = payload.get("regions") if isinstance(payload.get("regions"), list) else []
+        anchors = payload.get("anchor_candidates") if isinstance(payload.get("anchor_candidates"), list) else []
+        invariants = payload.get("invariant_candidates") if isinstance(payload.get("invariant_candidates"), list) else []
+        nodes = payload.get("nodes") if isinstance(payload.get("nodes"), list) else []
+        links = payload.get("links") if isinstance(payload.get("links"), list) else []
+        built_at = _ta._norm_text(payload.get("exported_at"))
+
+        lines = [
+            f"# Tree Inventory: {tree_name or 'Unknown'}",
+            "",
+            f"Exported at: `{built_at}`",
+            "",
+            "## Summary",
+            "",
+            f"- Nodes: {int(totals.get('nodes', 0) or 0)}",
+            f"- Links: {int(totals.get('links', 0) or 0)}",
+            f"- Frames: {int(totals.get('frames', 0) or 0)}",
+            f"- Groups: {int(totals.get('groups', 0) or 0)}",
+            f"- Interface inputs: {int(totals.get('interface_inputs', 0) or 0)}",
+            f"- Interface outputs: {int(totals.get('interface_outputs', 0) or 0)}",
+            "",
+            "## Interface Inputs",
+            "",
+        ]
+        input_rows = []
+        for item in interface.get("inputs", []) if isinstance(interface.get("inputs"), list) else []:
+            if not isinstance(item, dict):
+                continue
+            input_rows.append([
+                item.get("name", ""),
+                item.get("identifier", ""),
+                item.get("socket_type", ""),
+                item.get("default_value", ""),
+                item.get("description", ""),
+            ])
+        lines.append(self._format_markdown_table(["Name", "Identifier", "Type", "Default", "Description"], input_rows) or "_No inputs captured._")
+        lines.extend(["", "## Live Modifier Parameters", ""])
+        param_rows = []
+        for item in live_parameters:
+            if not isinstance(item, dict):
+                continue
+            param_rows.append([
+                item.get("name", ""),
+                item.get("identifier", ""),
+                item.get("socket_type", ""),
+                item.get("value", item.get("default_value", "")),
+            ])
+        lines.append(self._format_markdown_table(["Name", "Identifier", "Type", "Value"], param_rows) or "_No live modifier parameters captured._")
+        lines.extend(["", "## Region Candidates", ""])
+        region_rows = []
+        for item in regions:
+            if not isinstance(item, dict):
+                continue
+            region_rows.append([
+                item.get("name", ""),
+                item.get("label", ""),
+                item.get("type", ""),
+                item.get("child_count", ""),
+                item.get("probable_function", ""),
+                ", ".join(str(v) for v in item.get("key_nodes", [])[:8]) if isinstance(item.get("key_nodes"), list) else "",
+            ])
+        lines.append(self._format_markdown_table(["Name", "Label", "Type", "Children", "Function", "Key Nodes"], region_rows) or "_No regions captured._")
+        lines.extend(["", "## Anchor Candidates", ""])
+        anchor_rows = []
+        for item in anchors:
+            if not isinstance(item, dict):
+                continue
+            anchor_rows.append([
+                item.get("name", ""),
+                item.get("label", ""),
+                item.get("type", ""),
+                item.get("parent_frame", ""),
+                ", ".join(str(v) for v in item.get("signals", [])[:8]) if isinstance(item.get("signals"), list) else "",
+                item.get("confidence", ""),
+            ])
+        lines.append(self._format_markdown_table(["Name", "Label", "Type", "Frame", "Signals", "Confidence"], anchor_rows) or "_No anchor candidates captured._")
+        lines.extend(["", "## Invariant Candidates", ""])
+        invariant_rows = []
+        for item in invariants:
+            if not isinstance(item, dict):
+                continue
+            invariant_rows.append([item.get("name", ""), item.get("rule", ""), item.get("evidence", "")])
+        lines.append(self._format_markdown_table(["Name", "Rule", "Evidence"], invariant_rows) or "_No invariant candidates captured._")
+        lines.extend(["", "## Nodes", ""])
+        node_rows = []
+        for item in nodes:
+            if not isinstance(item, dict):
+                continue
+            node_rows.append([
+                item.get("name", ""),
+                item.get("label", ""),
+                item.get("type", item.get("bl_idname", "")),
+                item.get("parent_frame", ""),
+                item.get("location", ""),
+            ])
+        lines.append(self._format_markdown_table(["Name", "Label", "Type", "Frame", "Location"], node_rows) or "_No nodes captured._")
+        lines.extend(["", "## Links", ""])
+        link_rows = []
+        for item in links:
+            if not isinstance(item, dict):
+                continue
+            link_rows.append([
+                item.get("from_node", ""),
+                item.get("from_socket", ""),
+                item.get("to_node", ""),
+                item.get("to_socket", ""),
+            ])
+        lines.append(self._format_markdown_table(["From Node", "From Socket", "To Node", "To Socket"], link_rows) or "_No links captured._")
+        lines.append("")
+        return "\n".join(lines)
+
+    def _export_tree_inventory(
+        self,
+        tool_input: dict[str, Any],
+        *,
+        session_state: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        state = session_state if isinstance(session_state, dict) else {}
+        requested_tree = _ta._norm_text(tool_input.get("tree_name"))
+        resolved = self._resolve_gn_workspace(tool_input, session_state=state)
+        if resolved.get("status") != "success":
+            return resolved
+        workspace = resolved.get("result", {}) if isinstance(resolved.get("result"), dict) else {}
+        tree_name = requested_tree or _ta._norm_text(workspace.get("selected_tree"))
+        if not tree_name:
+            return _json_error("No Geometry Nodes tree resolved for inventory export.")
+
+        inventory_raw = reads.handle_get_tree_inventory({
+            "tree_name": tree_name,
+            "include_values": bool(tool_input.get("include_values", True)),
+            "include_properties": bool(tool_input.get("include_properties", True)),
+        })
+        if inventory_raw.get("status") != "success":
+            return inventory_raw
+        inventory = inventory_raw.get("result", {}) if isinstance(inventory_raw.get("result"), dict) else {}
+        nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+        links = inventory.get("links", []) if isinstance(inventory.get("links"), list) else []
+        interface = inventory.get("interface") if isinstance(inventory.get("interface"), dict) else {}
+        regions = self._inventory_regions(inventory)
+        anchors = self._inventory_anchor_candidates(inventory)
+        invariants = self._inventory_invariant_candidates(inventory, regions)
+        params_result = self._get_tree_parameters(tree_name)
+        live_parameters = (
+            params_result.get("result", {}).get("parameters", [])
+            if params_result.get("status") == "success" and isinstance(params_result.get("result"), dict)
+            else []
+        )
+        phase, phase_conf, phase_scores = _ta._dominant_phase(nodes)
+        totals = {
+            "nodes": int(inventory.get("node_count", len(nodes)) or len(nodes)),
+            "links": int(inventory.get("link_count", len(links)) or len(links)),
+            "frames": int(inventory.get("frame_count", 0) or 0),
+            "groups": int(inventory.get("group_count", 0) or 0),
+            "unframed": int(inventory.get("unframed_count", 0) or 0),
+            "interface_inputs": len(interface.get("inputs", [])) if isinstance(interface.get("inputs"), list) else 0,
+            "interface_outputs": len(interface.get("outputs", [])) if isinstance(interface.get("outputs"), list) else 0,
+            "live_modifier_parameters": len(live_parameters) if isinstance(live_parameters, list) else 0,
+            "region_candidates": len(regions),
+            "anchor_candidates": len(anchors),
+        }
+        exported_at = _ta._utc_now_iso()
+        payload = {
+            "schema_version": "tree_inventory_export.v1",
+            "tree_name": tree_name,
+            "exported_at": exported_at,
+            "workspace": workspace,
+            "totals": totals,
+            "phase": {
+                "dominant": phase,
+                "confidence": phase_conf,
+                "scores": phase_scores,
+            },
+            "organization": _ta._organization_assessment(
+                node_count=totals["nodes"],
+                frame_count=totals["frames"],
+                group_count=totals["groups"],
+                unframed_count=totals["unframed"],
+            ),
+            "interface": interface,
+            "live_modifier_parameters": live_parameters,
+            "parameter_summary": _ta._parameter_summary(params_result),
+            "regions": regions,
+            "anchor_candidates": anchors,
+            "invariant_candidates": invariants,
+            "nodes": nodes,
+            "links": links,
+            "source": {
+                "inventory": "direct_bpy_node_group_read",
+                "does_not_execute_or_mutate": True,
+            },
+        }
+
+        root = self._project_root_for_artifact(tool_input, state)
+        out_dir = root / "runtime" / "tree_inventory"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        safe_tree = self._safe_artifact_name(tree_name)
+        safe_ts = re.sub(r"[^0-9A-Za-z]+", "", exported_at)[:32]
+        base = f"{safe_tree}_{safe_ts}"
+        json_path = out_dir / f"{base}.json"
+        md_path = out_dir / f"{base}.md"
+        json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        md_path.write_text(self._tree_inventory_markdown(payload), encoding="utf-8")
+
+        return {
+            "status": "success",
+            "result": {
+                "tree_name": tree_name,
+                "json_path": str(json_path),
+                "markdown_path": str(md_path),
+                "totals": totals,
+                "phase": payload["phase"],
+                "next_step": "Use the Markdown for human review and the JSON as the source for DSL extraction.",
+            },
+        }
 
     def _capture_scene(self) -> dict[str, Any]:
         result = snapshots.handle_capture_scene({})
@@ -685,6 +1241,16 @@ class RuntimeDispatcher:
                 f"frames={int(memory.get('frame_count', 0) or 0)}, "
                 f"phase_hint={str(memory.get('phase_dominant') or 'unknown')}"
             )
+            inventory = memory.get("inventory") if isinstance(memory.get("inventory"), dict) else {}
+            if inventory:
+                lines.append(
+                    "- structural_inventory: "
+                    f"available={bool(inventory.get('available', False))}, "
+                    f"complete={bool(inventory.get('complete', False))}, "
+                    f"nodes={int(inventory.get('node_count', 0) or 0)}, "
+                    f"links={int(inventory.get('link_count', 0) or 0)}, "
+                    "prompt_scope=summary_only, access_full_tree_with=inspect_tree_inventory"
+                )
         if phase:
             lines.append(
                 f"- workflow_phase: {str(phase.get('tree_phase') or 'unknown')} "
@@ -1109,12 +1675,23 @@ class RuntimeDispatcher:
             "node_count": int(memory.get("node_count", 0) or 0),
             "frame_count": int(memory.get("frame_count", 0) or 0),
             "group_count": int(memory.get("group_count", 0) or 0),
+            "prompt_scope": "summary_only",
             "phase_dominant": str(memory.get("phase_dominant") or ""),
             "organization_assessment": memory.get("organization_assessment", {}),
             "key_outputs": _ta._bounded_list(memory.get("key_outputs", []), limit=8),
             "key_joins": _ta._bounded_list(memory.get("key_joins", []), limit=8),
             "major_regions": _ta._bounded_list(memory.get("major_regions", []), limit=10),
             "parameters": memory.get("parameters", {}),
+            "inventory": {
+                "available": isinstance(memory.get("inventory"), dict),
+                "complete": bool((memory.get("inventory") if isinstance(memory.get("inventory"), dict) else {}).get("complete", False)),
+                "node_count": int((memory.get("inventory") if isinstance(memory.get("inventory"), dict) else {}).get("node_count", 0) or 0),
+                "link_count": int((memory.get("inventory") if isinstance(memory.get("inventory"), dict) else {}).get("link_count", 0) or 0),
+                "source": str((memory.get("inventory") if isinstance(memory.get("inventory"), dict) else {}).get("source", "") or ""),
+                "access_tool": "inspect_tree_inventory",
+                "prompt_includes_full_nodes": False,
+                "prompt_includes_full_links": False,
+            },
             "marker": {
                 "tree_hash": str((memory.get("marker") if isinstance(memory.get("marker"), dict) else {}).get("tree_hash") or ""),
                 "node_names": _ta._bounded_list(
@@ -1370,11 +1947,16 @@ class RuntimeDispatcher:
             reused["freshness"] = freshness
             return {"status": "success", "result": {"workspace": workspace, "memory": reused}}
 
-        inventory_raw = self._tool_list_tree_nodes({"tree_name": tree_name})
-        if inventory_raw.get("status") != "success":
-            return inventory_raw
-        inventory = inventory_raw.get("result", {}) if isinstance(inventory_raw.get("result"), dict) else {}
-        nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+        direct_inventory_raw = reads.handle_get_tree_inventory({
+            "tree_name": tree_name,
+            "include_values": True,
+            "include_properties": True,
+        })
+        direct_inventory = (
+            direct_inventory_raw.get("result", {})
+            if direct_inventory_raw.get("status") == "success" and isinstance(direct_inventory_raw.get("result"), dict)
+            else {}
+        )
 
         node_trees = self._capture_node_trees()
         tree_snapshot: dict[str, Any] = {}
@@ -1382,8 +1964,23 @@ class RuntimeDispatcher:
             if isinstance(group, dict) and group.get("name") == tree_name:
                 tree_snapshot = group
                 break
-        links = tree_snapshot.get("links", []) if isinstance(tree_snapshot.get("links"), list) else []
-        interface = tree_snapshot.get("interface", {}) if isinstance(tree_snapshot.get("interface"), dict) else {}
+
+        if direct_inventory:
+            inventory = direct_inventory
+            nodes = direct_inventory.get("nodes", []) if isinstance(direct_inventory.get("nodes"), list) else []
+            links = direct_inventory.get("links", []) if isinstance(direct_inventory.get("links"), list) else []
+            interface = direct_inventory.get("interface", {}) if isinstance(direct_inventory.get("interface"), dict) else {}
+            inventory_source = "direct_bpy_full_inventory"
+        else:
+            inventory_raw = self._tool_list_tree_nodes({"tree_name": tree_name})
+            if inventory_raw.get("status") != "success":
+                return inventory_raw
+            inventory = inventory_raw.get("result", {}) if isinstance(inventory_raw.get("result"), dict) else {}
+            nodes = inventory.get("nodes", []) if isinstance(inventory.get("nodes"), list) else []
+            links = tree_snapshot.get("links", []) if isinstance(tree_snapshot.get("links"), list) else []
+            interface = tree_snapshot.get("interface", {}) if isinstance(tree_snapshot.get("interface"), dict) else {}
+            inventory_source = "list_nodes_with_snapshot_links_fallback"
+
         bindings = tree_snapshot.get("bindings", []) if isinstance(tree_snapshot.get("bindings"), list) else []
         selected_binding = workspace.get("selected_binding") if isinstance(workspace.get("selected_binding"), dict) else {}
         if not selected_binding and bindings:
@@ -1500,12 +2097,27 @@ class RuntimeDispatcher:
             "major_regions": regions[:80],
             "structural_hotspots": hotspots,
             "parameters": params,
+            "inventory": {
+                "schema_version": "tree_direct_inventory.v1" if direct_inventory else "tree_inventory_fallback.v1",
+                "tree_name": tree_name,
+                "node_count": int(inventory.get("node_count", len(nodes)) or len(nodes)),
+                "link_count": int(inventory.get("link_count", len(links)) or len(links)),
+                "frame_count": len(frames),
+                "group_count": len(groups),
+                "unframed_count": len(unframed),
+                "interface": interface,
+                "nodes": nodes,
+                "links": links,
+                "source": inventory_source,
+                "complete": bool(direct_inventory),
+            },
             "marker": marker,
             "structural_hash": structural_hash,
             "built_at": _ta._utc_now_iso(),
             "source_tools": [
                 "resolve_gn_workspace",
                 "list_tree_nodes",
+                "get_tree_inventory",
                 "get_tree_parameters",
                 "capture_node_trees_snapshot_internal",
             ],
@@ -1513,6 +2125,8 @@ class RuntimeDispatcher:
                 "stale": False,
                 "marker_kind": "node_names_and_link_signatures",
                 "snapshot_truncated": bool(tree_snapshot.get("snapshot_truncated", False)),
+                "full_inventory_available": bool(direct_inventory),
+                "inventory_source": inventory_source,
             },
             "stale": False,
         }

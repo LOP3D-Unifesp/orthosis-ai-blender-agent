@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
 import unittest
 import importlib
@@ -300,6 +301,57 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("resposta", result.response_text)
         self.assertEqual([("build_tree_structural_memory", {"tree_name": "Biomodelo_GN"})], runtime.tool_calls)
 
+    def test_workspace_seed_biomodel_source_request_calls_seed_tool_directly(self):
+        from blender_addon.handler import TurnContext
+        from blender_addon.handler.workspace import handle
+        from blender_addon.runtime.router import ClassifierMeta, TurnClass
+
+        class _Runtime:
+            def __init__(self):
+                self._messages = []
+                self._session_memory = {}
+                self._session_state = {}
+                self.journal = types.SimpleNamespace(log_runtime_event=lambda **_: None)
+                self.tools = []
+                self.model = "fake-model"
+                self.tool_calls: list[tuple[str, dict[str, Any]]] = []
+
+            def _execute_tool(self, name, tool_input, _elapsed):
+                self.tool_calls.append((name, dict(tool_input)))
+                return json.dumps({
+                    "block_name": "GN_Biomodel_Source",
+                    "source_block_name": "GN_Biomodel_Source",
+                    "generated_tree_name": "VB_Biomodel_Generated",
+                    "version": 1,
+                    "char_count": 12000,
+                    "manual_execution_required": True,
+                })
+
+            def _agent_loop(self, *_args, **_kwargs):
+                raise AssertionError("seed request should bypass the model loop")
+
+        runtime = _Runtime()
+        ctx = TurnContext(
+            session=_FakeSession(),
+            message="Use seed_biomodel_source para criar o GN_Biomodel_Source. Nao execute ainda; apenas escreva o Text block para revisao.",
+            meta=ClassifierMeta(
+                turn_class=TurnClass.CONTEXT_INQUIRY,
+                goal_mode="inquiry",
+                needs_baseline_refresh=False,
+            ),
+            blend_path="",
+            _runtime=runtime,
+            knowledge_dir=Path("/nonexistent/knowledge/domain"),
+        )
+
+        result = handle(ctx, "inquiry")
+
+        self.assertEqual([("seed_biomodel_source", {"block_name": "GN_Biomodel_Source"})], runtime.tool_calls)
+        self.assertIn("GN_Biomodel_Source", result.response_text)
+        self.assertIn("VB_Biomodel_Generated", result.response_text)
+        self.assertIn("Nao executei", result.response_text)
+        self.assertEqual("drafting", result.phase_transition)
+
     def test_legacy_drafting_support_module_is_removed(self):
         with self.assertRaises(ModuleNotFoundError):
             importlib.import_module("blender_addon.handler._drafting_support")
@@ -386,6 +438,64 @@ class SlimHandlerSmokeTests(unittest.TestCase):
             calls,
         )
 
+    def test_biomodel_source_template_compiles_and_preserves_parameter_inventory(self):
+        from blender_addon.biomodel.source_template import (
+            GENERATED_TREE_NAME,
+            PARAMETERS,
+            build_biomodel_source_template,
+        )
+
+        code = build_biomodel_source_template()
+
+        compile(code, "GN_Biomodel_Source", "exec")
+        self.assertEqual(39, len(PARAMETERS))
+        self.assertIn("GN_Biomodel_Source", code)
+        self.assertIn(GENERATED_TREE_NAME, code)
+        self.assertIn("Comp Antebraço", code)
+        self.assertIn("Raio Punho", code)
+        self.assertIn("Largura Metacarpo", code)
+        self.assertIn("VB_Biomodel_Generated", code)
+        self.assertIn("bpy.data.node_groups.remove(existing)", code)
+
+    def test_runtime_dispatcher_seeds_biomodel_source_through_draft_writer(self):
+        from blender_addon.tools import draft
+        from blender_addon.tools.handlers import HANDLERS
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        self.assertIn("seed_biomodel_source", HANDLERS)
+
+        dispatcher = RuntimeDispatcher()
+        calls: list[dict[str, Any]] = []
+
+        def _fake_write(tool_input):
+            calls.append(dict(tool_input))
+            return {"status": "success", "result": {"block_name": tool_input.get("block_name", ""), "version": 1}}
+
+        original_write = draft.handle_write_script_draft
+        try:
+            draft.handle_write_script_draft = _fake_write
+            result = dispatcher.execute(
+                "seed_biomodel_source",
+                {},
+                session_state={"_runtime_project_root": "C:/workspace", "session_id": "sess-1"},
+            )
+        finally:
+            draft.handle_write_script_draft = original_write
+
+        self.assertEqual("success", result["status"])
+        self.assertEqual(1, len(calls))
+        seeded = calls[0]
+        self.assertEqual("GN_Biomodel_Source", seeded["block_name"])
+        self.assertEqual("biomodel_source", seeded["goal_mode"])
+        self.assertEqual("intentional_rebuild", seeded["edit_mode"])
+        self.assertTrue(seeded["allow_tree_change"])
+        self.assertTrue(seeded["allow_capability_regression"])
+        self.assertIn("VB_Biomodel_Generated", seeded["code"])
+        self.assertEqual("C:/workspace", seeded["project_root"])
+        self.assertEqual("sess-1", seeded["session_id"])
+        self.assertEqual("VB_Biomodel_Generated", result["result"]["generated_tree_name"])
+        self.assertTrue(result["result"]["manual_execution_required"])
+
     def test_runtime_dispatcher_routes_focal_reads_through_reads_module(self):
         from blender_addon.tools import reads
         from blender_addon.tools.server_dispatch import RuntimeDispatcher
@@ -441,6 +551,222 @@ class SlimHandlerSmokeTests(unittest.TestCase):
             ],
             calls,
         )
+
+    def test_runtime_dispatcher_inspects_full_tree_inventory_in_pages(self):
+        from blender_addon.tools import reads
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        dispatcher = RuntimeDispatcher()
+        dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
+            "status": "success",
+            "result": {
+                "selected_tree": "Biomodelo_GN",
+                "selected_binding": {"object_name": "HandMesh", "modifier_name": "OrthosisGN"},
+                "selection_reason": "test",
+                "confidence": {"level": "high", "score": 1.0},
+            },
+        }
+        dispatcher._get_tree_parameters = lambda tree_name: {
+            "status": "success",
+            "result": {
+                "tree": tree_name,
+                "parameters": [
+                    {"name": "Palm Width", "identifier": "Input_12", "socket_type": "NodeSocketFloat"},
+                ],
+            },
+        }
+        fake_inventory = {
+            "status": "success",
+            "result": {
+                "schema_version": "tree_direct_inventory.v1",
+                "tree_name": "Biomodelo_GN",
+                "node_count": 4,
+                "link_count": 2,
+                "frame_count": 1,
+                "group_count": 0,
+                "unframed_count": 2,
+                "interface": {
+                    "inputs": [{"name": "Palm Width", "identifier": "Input_12", "socket_type": "NodeSocketFloat"}],
+                    "outputs": [{"name": "Geometry", "identifier": "Socket_1", "socket_type": "NodeSocketGeometry"}],
+                    "panels": [],
+                },
+                "nodes": [
+                    {"name": "Group Input", "label": "", "type": "NodeGroupInput", "parent_frame": "", "location": [0, 0]},
+                    {"name": "REGION_HAND", "label": "Hand Region", "type": "NodeFrame", "parent_frame": "", "location": [100, 0]},
+                    {"name": "Anchor_Wrist", "label": "Wrist Anchor", "type": "GeometryNodeInputPosition", "parent_frame": "REGION_HAND", "location": [200, 0]},
+                    {"name": "Group Output", "label": "", "type": "NodeGroupOutput", "parent_frame": "", "location": [500, 0]},
+                ],
+                "links": [
+                    {"from_node": "Group Input", "from_socket": "Palm Width", "to_node": "Anchor_Wrist", "to_socket": "Vector"},
+                    {"from_node": "Anchor_Wrist", "from_socket": "Position", "to_node": "Group Output", "to_socket": "Geometry"},
+                ],
+            },
+        }
+        original_inventory = reads.handle_get_tree_inventory
+        try:
+            reads.handle_get_tree_inventory = lambda tool_input: fake_inventory
+
+            overview = dispatcher.execute("inspect_tree_inventory", {"tree_name": "Biomodelo_GN"})
+            nodes = dispatcher.execute(
+                "inspect_tree_inventory",
+                {"tree_name": "Biomodelo_GN", "section": "nodes", "offset": 2, "limit": 1},
+            )
+            parameters = dispatcher.execute(
+                "inspect_tree_inventory",
+                {"tree_name": "Biomodelo_GN", "section": "parameters"},
+            )
+        finally:
+            reads.handle_get_tree_inventory = original_inventory
+
+        self.assertEqual("success", overview["status"])
+        self.assertEqual(4, overview["result"]["totals"]["nodes"])
+        self.assertEqual(2, overview["result"]["totals"]["links"])
+        self.assertTrue(overview["result"]["inspection_policy"]["full_tree_read"])
+        self.assertEqual(["parameters", "regions", "nodes", "links", "anchors", "invariants"], overview["result"]["overview"]["next_sections"])
+
+        self.assertEqual("success", nodes["status"])
+        self.assertEqual(2, nodes["result"]["page"]["offset"])
+        self.assertEqual(1, nodes["result"]["page"]["count"])
+        self.assertEqual("Anchor_Wrist", nodes["result"]["page"]["items"][0]["name"])
+        self.assertEqual(3, nodes["result"]["page"]["next_offset"])
+
+        self.assertEqual("success", parameters["status"])
+        self.assertEqual("Palm Width", parameters["result"]["interface"]["inputs"][0]["name"])
+        self.assertEqual("Input_12", parameters["result"]["live_modifier_parameters"][0]["identifier"])
+
+    def test_build_tree_structural_memory_keeps_full_direct_inventory(self):
+        from blender_addon.tools import reads
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        dispatcher = RuntimeDispatcher()
+        dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
+            "status": "success",
+            "result": {
+                "selected_tree": "Biomodelo_GN",
+                "selected_binding": {"object_name": "HandMesh", "modifier_name": "OrthosisGN"},
+                "selection_reason": "test",
+                "confidence": {"level": "high", "score": 1.0},
+            },
+        }
+        dispatcher._capture_node_trees = lambda: {
+            "node_groups": [
+                {
+                    "name": "Biomodelo_GN",
+                    "bindings": [{"object_name": "HandMesh", "modifier_name": "OrthosisGN"}],
+                    "snapshot_truncated": True,
+                }
+            ]
+        }
+        dispatcher._get_tree_parameters = lambda tree_name: {
+            "status": "success",
+            "result": {"tree": tree_name, "parameters": [{"name": "Palm Width", "identifier": "Input_12"}]},
+        }
+        fake_inventory = {
+            "status": "success",
+            "result": {
+                "tree_name": "Biomodelo_GN",
+                "node_count": 3,
+                "link_count": 2,
+                "frame_count": 1,
+                "group_count": 0,
+                "unframed_count": 2,
+                "interface": {"inputs": [{"name": "Palm Width"}], "outputs": [{"name": "Geometry"}]},
+                "nodes": [
+                    {"name": "Group Input", "label": "", "type": "NodeGroupInput", "parent_frame": ""},
+                    {"name": "REGION_HAND", "label": "Hand Region", "type": "NodeFrame", "parent_frame": ""},
+                    {"name": "Anchor_Wrist", "label": "Wrist Anchor", "type": "GeometryNodeInputPosition", "parent_frame": "REGION_HAND"},
+                ],
+                "links": [
+                    {"from_node": "Group Input", "from_socket": "Palm Width", "to_node": "Anchor_Wrist", "to_socket": "Vector"},
+                    {"from_node": "Anchor_Wrist", "from_socket": "Position", "to_node": "REGION_HAND", "to_socket": "Geometry"},
+                ],
+            },
+        }
+        original_inventory = reads.handle_get_tree_inventory
+        try:
+            reads.handle_get_tree_inventory = lambda tool_input: fake_inventory
+            result = dispatcher.execute("build_tree_structural_memory", {"tree_name": "Biomodelo_GN"})
+        finally:
+            reads.handle_get_tree_inventory = original_inventory
+
+        self.assertEqual("success", result["status"])
+        memory = result["result"]["memory"]
+        self.assertEqual(3, memory["node_count"])
+        self.assertEqual(2, memory["inventory"]["link_count"])
+        self.assertTrue(memory["inventory"]["complete"])
+        self.assertEqual("direct_bpy_full_inventory", memory["inventory"]["source"])
+        self.assertEqual("Anchor_Wrist", memory["inventory"]["nodes"][2]["name"])
+        self.assertTrue(memory["freshness"]["full_inventory_available"])
+
+    def test_export_tree_inventory_writes_json_and_markdown_artifacts(self):
+        from blender_addon.tools import reads
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        dispatcher = RuntimeDispatcher()
+        dispatcher._resolve_gn_workspace = lambda tool_input, session_state=None: {
+            "status": "success",
+            "result": {
+                "selected_tree": "Biomodelo_GN",
+                "selected_binding": {"object_name": "HandMesh", "modifier_name": "OrthosisGN"},
+                "selection_reason": "test",
+                "confidence": {"level": "high", "score": 1.0},
+            },
+        }
+        dispatcher._get_tree_parameters = lambda tree_name: {
+            "status": "success",
+            "result": {
+                "tree": tree_name,
+                "parameters": [{"name": "Palm Width", "identifier": "Input_12", "value": 42}],
+            },
+        }
+        fake_inventory = {
+            "status": "success",
+            "result": {
+                "tree_name": "Biomodelo_GN",
+                "node_count": 3,
+                "link_count": 2,
+                "frame_count": 1,
+                "group_count": 0,
+                "unframed_count": 2,
+                "interface": {
+                    "inputs": [{"name": "Palm Width", "identifier": "Input_12", "socket_type": "NodeSocketFloat"}],
+                    "outputs": [{"name": "Geometry", "identifier": "Socket_1", "socket_type": "NodeSocketGeometry"}],
+                },
+                "nodes": [
+                    {"name": "Group Input", "label": "", "type": "NodeGroupInput", "parent_frame": "", "location": [0, 0]},
+                    {"name": "REGION_HAND", "label": "Hand Region", "type": "NodeFrame", "parent_frame": "", "location": [100, 0]},
+                    {"name": "Anchor_Wrist", "label": "Wrist Anchor", "type": "GeometryNodeInputPosition", "parent_frame": "REGION_HAND", "location": [200, 0]},
+                ],
+                "links": [
+                    {"from_node": "Group Input", "from_socket": "Palm Width", "to_node": "Anchor_Wrist", "to_socket": "Vector"},
+                    {"from_node": "Anchor_Wrist", "from_socket": "Position", "to_node": "REGION_HAND", "to_socket": "Geometry"},
+                ],
+            },
+        }
+        original_inventory = reads.handle_get_tree_inventory
+        try:
+            reads.handle_get_tree_inventory = lambda tool_input: fake_inventory
+            with tempfile.TemporaryDirectory() as tmp:
+                result = dispatcher.execute(
+                    "export_tree_inventory",
+                    {"tree_name": "Biomodelo_GN", "project_root": tmp},
+                )
+                self.assertEqual("success", result["status"])
+                json_path = Path(result["result"]["json_path"])
+                md_path = Path(result["result"]["markdown_path"])
+                self.assertTrue(json_path.exists())
+                self.assertTrue(md_path.exists())
+                payload = json.loads(json_path.read_text(encoding="utf-8"))
+                markdown = md_path.read_text(encoding="utf-8")
+        finally:
+            reads.handle_get_tree_inventory = original_inventory
+
+        self.assertEqual("tree_inventory_export.v1", payload["schema_version"])
+        self.assertEqual(3, payload["totals"]["nodes"])
+        self.assertEqual("Anchor_Wrist", payload["nodes"][2]["name"])
+        self.assertEqual("Palm Width", payload["live_modifier_parameters"][0]["name"])
+        self.assertIn("# Tree Inventory: Biomodelo_GN", markdown)
+        self.assertIn("Anchor_Wrist", markdown)
 
     def test_runtime_dispatcher_routes_query_node_types_through_query_module(self):
         from blender_addon.tools import query

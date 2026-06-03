@@ -1,5 +1,7 @@
 # Draft Flow Audit
 
+> Legacy-context note for `codex/biomodel-source-migration`: this document audits the old draft-mutation flow. It is not the governing architecture for biomodel source mode. For the accepted source-mode boundary, see `docs/BIOMODEL_SOURCE_MODE_DECISION.md`.
+
 ## 1. Entrada do usuario
 
 - Entrada normal da UI: `CHAT_OT_SendMessage.execute()` em `blender_addon/ui/panel.py:965` chama `_send_user_message()` em `blender_addon/ui/panel.py:904`.

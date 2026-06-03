@@ -12,6 +12,7 @@ from typing import Any
 
 import bpy
 
+from .biomodel_source import handle_seed_biomodel_source
 from .draft import handle_read_script_draft, handle_write_script_draft
 from .edits import handle_apply_collections, handle_apply_gn_edits, handle_apply_renames
 from .execution import handle_execute_code
@@ -85,4 +86,5 @@ HANDLERS = {
     "query_node_types": handle_query_node_types,
     "write_script_draft": handle_write_script_draft,
     "read_script_draft": handle_read_script_draft,
+    "seed_biomodel_source": handle_seed_biomodel_source,
 }

@@ -2937,6 +2937,12 @@ class FoundationStabilizationTests(unittest.TestCase):
                 "key_joins": ["Join Geometry"],
                 "major_regions": [{"name": "Metacarpos", "type": "frame"}],
                 "parameters": {"measures": [{"name": "Palm Width"}]},
+                "inventory": {
+                    "complete": True,
+                    "node_count": 64,
+                    "link_count": 90,
+                    "source": "direct_bpy_full_inventory",
+                },
                 "marker": {
                     "tree_hash": "treehash-64",
                     "node_names": ["Group Input", "Cube_Metacarpo1", "Join Geometry"],
@@ -3026,6 +3032,8 @@ class FoundationStabilizationTests(unittest.TestCase):
         self.assertEqual("treehash-64", payload["structural_memory"]["marker"]["tree_hash"])
         self.assertIn("Prepared deterministic draft context", payload["prompt_context"])
         self.assertIn("goal_mode: functional_expansion", payload["prompt_context"])
+        self.assertIn("structural_inventory", payload["prompt_context"])
+        self.assertIn("access_full_tree_with=inspect_tree_inventory", payload["prompt_context"])
         self.assertIn("write_gate", payload["prompt_context"])
         self.assertIn("coverage_refresh", payload["prompt_context"])
 

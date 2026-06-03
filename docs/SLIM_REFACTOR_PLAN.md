@@ -1,5 +1,7 @@
 # Slim Refactor Plan
 
+> Note for `codex/biomodel-source-migration`: this is historical context, not the governing plan for the biomodel-source branch. Any statement here that treats `GN_Agent_Draft` as the product source of truth applies only to the legacy draft-mutation workflow. The governing biomodel decision is `docs/BIOMODEL_SOURCE_MODE_DECISION.md`.
+
 > Documento único de execução desta branch (`slim-refactor`).
 > Criado em 2026-05-06.
 > Objetivo: substituir o miolo bloated do addon (~10k linhas em 4 arquivos) por um núcleo enxuto (~1.5–2k linhas) preservando os módulos que comprovadamente funcionam.

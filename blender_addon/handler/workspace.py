@@ -114,6 +114,9 @@ GOAL_CONFIGS: dict[str, GoalConfig] = {
 
 def handle(ctx: TurnContext, goal_mode: str) -> HandlerResult:
     """Handle a workspace turn with an explicit goal mode."""
+    if _is_biomodel_source_seed_request(ctx.message):
+        return _handle_biomodel_source_seed(ctx)
+
     config = GOAL_CONFIGS.get(str(goal_mode or "").strip()) or GOAL_CONFIGS["inquiry"]
     ctx.log_event("workspace_goal_selected", {
         "goal_mode": config.name,
@@ -130,6 +133,77 @@ def handle(ctx: TurnContext, goal_mode: str) -> HandlerResult:
     if config.name in {"diagnose_only", "focal_correction", "functional_expansion"}:
         return _handle_draft_goal(ctx, config)
     return _handle_inquiry(ctx, config)
+
+
+def _is_biomodel_source_seed_request(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if "seed_biomodel_source" in text:
+        return True
+    if "gn_biomodel_source" not in text:
+        return False
+    action_words = (
+        "cria",
+        "crie",
+        "criar",
+        "escreva",
+        "escrever",
+        "salve",
+        "salvar",
+        "semeie",
+        "semear",
+        "seed",
+        "write",
+    )
+    return any(re.search(rf"\b{re.escape(word)}\b", text) for word in action_words)
+
+
+def _handle_biomodel_source_seed(ctx: TurnContext) -> HandlerResult:
+    raw = ctx.execute_tool("seed_biomodel_source", {"block_name": "GN_Biomodel_Source"})
+    if str(raw or "").startswith(("ERROR:", "BLOCKED:")):
+        response = (
+            "Nao consegui criar o `GN_Biomodel_Source` porque o tool retornou erro: "
+            + str(raw or "")[:500]
+        )
+        return HandlerResult(
+            response_text=response,
+            phase_transition="drafting",
+            session_mutations=[{"type": "biomodel_source_seed_failed"}],
+        )
+
+    try:
+        payload = json.loads(raw or "{}")
+    except Exception:
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    block_name = str(payload.get("source_block_name") or payload.get("block_name") or "GN_Biomodel_Source")
+    generated_tree = str(payload.get("generated_tree_name") or "VB_Biomodel_Generated")
+    version = payload.get("version")
+    char_count = payload.get("char_count")
+    details = []
+    if version:
+        details.append(f"rev {version}")
+    if char_count:
+        details.append(f"{char_count} chars")
+    detail_text = f" ({', '.join(details)})" if details else ""
+    response = (
+        f"Criei o Text block `{block_name}`{detail_text} com o template inicial do biomodel source. "
+        f"Nao executei o script; quando voce rodar manualmente, ele deve criar ou substituir apenas `{generated_tree}`."
+    )
+    ctx.log_event("biomodel_source_seeded", {
+        "block_name": block_name,
+        "generated_tree": generated_tree,
+        "version": version,
+        "char_count": char_count,
+    })
+    return HandlerResult(
+        response_text=response,
+        phase_transition="drafting",
+        session_mutations=[{"type": "biomodel_source_seeded"}],
+    )
 
 
 def _handle_inquiry(ctx: TurnContext, config: GoalConfig) -> HandlerResult:

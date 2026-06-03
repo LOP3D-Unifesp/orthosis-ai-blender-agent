@@ -405,6 +405,101 @@ def handle_get_local_subgraph_context(cmd: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _serialize_tree_interface(tree) -> dict[str, list[dict[str, Any]]]:
+    interface = {"inputs": [], "outputs": [], "panels": []}
+    items_tree = getattr(getattr(tree, "interface", None), "items_tree", [])
+    for item in items_tree:
+        try:
+            item_type = str(getattr(item, "item_type", "") or "")
+            if item_type == "PANEL":
+                interface["panels"].append({
+                    "name": str(getattr(item, "name", "") or ""),
+                    "identifier": str(getattr(item, "identifier", "") or ""),
+                })
+                continue
+            in_out = str(getattr(item, "in_out", "") or "")
+            if in_out not in {"INPUT", "OUTPUT"}:
+                continue
+            entry = {
+                "name": str(getattr(item, "name", "") or ""),
+                "identifier": str(getattr(item, "identifier", "") or ""),
+                "socket_type": str(getattr(item, "socket_type", "") or ""),
+                "description": str(getattr(item, "description", "") or ""),
+            }
+            if hasattr(item, "default_value"):
+                entry["default_value"] = capture._json_safe_value(getattr(item, "default_value"))
+            if hasattr(item, "min_value"):
+                entry["min_value"] = capture._json_safe_value(getattr(item, "min_value"))
+            if hasattr(item, "max_value"):
+                entry["max_value"] = capture._json_safe_value(getattr(item, "max_value"))
+            if getattr(item, "parent", None) is not None:
+                entry["parent_panel"] = str(getattr(item.parent, "name", "") or "")
+            target = "inputs" if in_out == "INPUT" else "outputs"
+            interface[target].append(entry)
+        except Exception:
+            continue
+    return interface
+
+
+def handle_get_tree_inventory(cmd: dict) -> dict:
+    """Return a full direct inventory of one Geometry Nodes tree.
+
+    Unlike prompt-oriented structural memory, this intentionally reads all
+    nodes and links from the live tree and leaves paging/compaction to the
+    caller. It is meant for source/DSL extraction, not for one-shot prompt
+    injection.
+    """
+    tree_name = str(cmd.get("tree_name", "")).strip()
+    include_values = bool(cmd.get("include_values", True))
+    include_properties = bool(cmd.get("include_properties", True))
+
+    def _do():
+        if not tree_name:
+            return {"status": "error", "error": "Missing required input: tree_name"}
+        tree = bpy.data.node_groups.get(tree_name)
+        if tree is None:
+            available = [ng.name for ng in bpy.data.node_groups if ng.bl_idname == "GeometryNodeTree"]
+            return {
+                "status": "error",
+                "error": f"Node group '{tree_name}' not found",
+                "available_trees": available,
+            }
+
+        node_names = {node.name for node in tree.nodes}
+        nodes_payload, links_payload = _serialize_nodes_and_links(
+            tree,
+            node_names,
+            include_values=include_values,
+            include_properties=include_properties,
+        )
+        frames = [node for node in nodes_payload if node.get("type") == "NodeFrame"]
+        groups = [
+            node for node in nodes_payload
+            if str(node.get("type", "")).lower() in {"geometrynodegroup", "nodegroup"}
+        ]
+        unframed = [
+            node for node in nodes_payload
+            if not node.get("parent_frame") and node.get("type") != "NodeFrame"
+        ]
+        return {
+            "status": "success",
+            "result": {
+                "schema_version": "tree_direct_inventory.v1",
+                "tree_name": tree_name,
+                "node_count": len(nodes_payload),
+                "link_count": len(links_payload),
+                "frame_count": len(frames),
+                "group_count": len(groups),
+                "unframed_count": len(unframed),
+                "interface": _serialize_tree_interface(tree),
+                "nodes": nodes_payload,
+                "links": links_payload,
+            },
+        }
+
+    return execute_in_main_thread(_do)
+
+
 def handle_list_tree_nodes(cmd: dict) -> dict:
     """Retorna o inventário completo de nós de uma árvore GN, sem cap.
 
@@ -537,6 +632,7 @@ def handle_find_tree_nodes(cmd: dict) -> dict:
     return execute_in_main_thread(_do)
 
 __all__ = [
+    "handle_get_tree_inventory",
     "handle_get_node_context",
     "handle_get_selected_nodes_context",
     "handle_get_active_frame_context",

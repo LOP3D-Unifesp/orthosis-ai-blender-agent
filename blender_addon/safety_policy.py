@@ -28,6 +28,7 @@ AUTO_APPLY_TOOLS = {
     "analyze_scene",
     "capture_screenshot",
     "query_node_types",
+    "seed_biomodel_source",
 }
 
 

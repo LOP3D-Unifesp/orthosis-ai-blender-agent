@@ -28,6 +28,7 @@ _STATUS_MESSAGES = {
     "build_tree_structural_memory": "Lendo árvore GN...",
     "read_script_draft": "Lendo draft...",
     "write_script_draft": "Escrevendo draft...",
+    "seed_biomodel_source": "Criando biomodel source...",
     "prepare_draft_context": "Preparando contexto de draft...",
     "classify_tree_phases": "Classificando fases da árvore...",
     "map_clinical_parameter_roles": "Mapeando parâmetros clínicos...",

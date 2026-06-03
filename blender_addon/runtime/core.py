@@ -1162,11 +1162,14 @@ class Runtime:
             )
             return blocked
 
+        dispatcher_state = dict(state)
+        dispatcher_state["_runtime_project_root"] = str(self.project_root)
+
         raw = self.dispatcher.execute(
             canonical_tool,
             tool_input,
             output_mode=output_mode,
-            session_state=state,
+            session_state=dispatcher_state,
         )
         status = raw.get("status", "success")
         self.journal.log_runtime_event(

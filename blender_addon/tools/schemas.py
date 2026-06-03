@@ -154,6 +154,48 @@ TOOLS = [
         },
     },
     {
+        "name": "inspect_tree_inventory",
+        "description": (
+            "Inspect an entire Geometry Nodes tree through a paginated direct inventory. "
+            "Use this for biomodel-source/DSL extraction when you need all parameters, "
+            "regions, node names, links, anchor candidates, and invariant candidates. "
+            "This tool reads only; it does not execute code or mutate Blender state. "
+            "Call section='overview' first, then page through nodes/links/regions as needed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tree_name": {"type": "string"},
+                "section": {
+                    "type": "string",
+                    "enum": ["overview", "parameters", "regions", "nodes", "links", "anchors", "invariants"],
+                    "default": "overview",
+                },
+                "offset": {"type": "integer", "default": 0},
+                "limit": {"type": "integer", "default": 40},
+                "include_values": {"type": "boolean", "default": True},
+                "include_properties": {"type": "boolean", "default": True},
+            },
+        },
+    },
+    {
+        "name": "export_tree_inventory",
+        "description": (
+            "Export the full direct Geometry Nodes tree inventory to local JSON and Markdown files "
+            "under runtime/tree_inventory. Use this when the user wants to analyze the whole tree "
+            "outside the Blender chat or start source/DSL extraction from a stable artifact. "
+            "This reads only; it does not execute code or mutate Blender state."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tree_name": {"type": "string"},
+                "include_values": {"type": "boolean", "default": True},
+                "include_properties": {"type": "boolean", "default": True},
+            },
+        },
+    },
+    {
         "name": "classify_tree_phases",
         "description": (
             "Classify the GN tree and its regions into orthosis workflow phases "
@@ -367,6 +409,25 @@ TOOLS = [
                     "type": "string",
                     "default": "GN_Agent_Draft",
                     "description": "Name of the Blender text block to read",
+                },
+            },
+        },
+    },
+    {
+        "name": "seed_biomodel_source",
+        "description": (
+            "Seed the phase-1 canonical biomodel source template into a Blender Text Editor block "
+            "named GN_Biomodel_Source. The source is not executed; the user reviews and manually "
+            "runs it to create or replace the separate VB_Biomodel_Generated tree. Use this to "
+            "start the biomodel-source migration without mutating the current Biomodelo tree."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_name": {
+                    "type": "string",
+                    "default": "GN_Biomodel_Source",
+                    "description": "Text block name to seed with the canonical biomodel source template.",
                 },
             },
         },

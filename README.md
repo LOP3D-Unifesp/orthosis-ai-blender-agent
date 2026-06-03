@@ -4,6 +4,8 @@
 
 Embeds a Claude-based copilot in the Blender sidebar. The agent reads the Geometry Nodes tree context, proposes Python scripts (*drafts*), and the designer reviews and executes them manually. The long-term goal is a fully parametric orthosis geometry that a clinical professional adjusts via a parameter panel — without any interaction with the AI agent.
 
+Branch note: `codex/biomodel-source-migration` defines a new primary path for the biomodel: `GN_Biomodel_Source` generates `VB_Biomodel_Generated`, while the existing draft-mutation workflow remains legacy for explicit live-tree patching. See [`docs/BIOMODEL_SOURCE_MODE_DECISION.md`](docs/BIOMODEL_SOURCE_MODE_DECISION.md).
+
 ---
 
 ## ⚠️ Disclaimer
@@ -19,10 +21,11 @@ All generated scripts must be reviewed by a qualified engineer before execution.
 - **Chat panel inside Blender** — sidebar copilot in the View3D viewport (N-panel → Orthosis tab)
 - **Scene context reading** — agent reads node tree structure, sockets, frames, links, and parameters
 - **Draft-based workflow** — agent proposes Python/bpy scripts; user reviews and runs them manually
+- **Biomodel source workflow** — migration path where a canonical Text block regenerates a disposable Geometry Nodes tree
 - **Fast paths** — greetings, help, and simple reads resolved without an API call
 - **Session persistence** — conversation history survives Blender restarts and file re-opens
 - **Post-failure recovery** — structured diagnosis when a script does not produce the expected result
-- **Automated tests** — 185 tests run without Blender or `bpy`
+- **Automated tests** — 191 tests run without Blender or `bpy`
 
 ---
 
@@ -54,7 +57,9 @@ The agent **never executes code autonomously**. The following tools are hard-blo
 | `make_plan` | **Blocked** |
 | `apply_simulator_payload` | **Blocked** |
 
-The agent writes drafts via `write_script_draft`. The user opens the draft in the Blender Text Editor, reviews it, and runs it manually via the addon's cycle operators (*Abrir Draft → Rodar Draft*).
+The legacy mutation path writes drafts via `write_script_draft`. The user opens the draft in the Blender Text Editor, reviews it, and runs it manually via the addon's cycle operators (*Abrir Draft → Rodar Draft*).
+
+The biomodel-source path writes `GN_Biomodel_Source` and still keeps manual execution as the safety boundary. Running that source should create or replace only `VB_Biomodel_Generated`, not mutate `Biomodelo`.
 
 ---
 
@@ -176,7 +181,7 @@ blend_IA_ort_v2/
 
 | Area | Status |
 |---|---|
-| Core agent loop | ✅ Functional — 185 tests pass |
+| Core agent loop | ✅ Functional — 191 tests pass |
 | Session persistence | ✅ V1 JSON + JSONL chat history |
 | Post-failure recovery | 🔶 Partial — diagnosis works; state sync has known edge cases |
 | LLM provider | ⚠️ Coupled to Anthropic API — multi-LLM abstraction not yet implemented |

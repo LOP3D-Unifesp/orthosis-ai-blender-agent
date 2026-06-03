@@ -432,6 +432,80 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "read_biomodel_source",
+        "description": (
+            "Read the canonical GN_Biomodel_Source Text block. Use this for biomodel-source work "
+            "instead of read_script_draft; it treats the source as the product source of truth and "
+            "does not inspect or mutate the live Biomodelo reference tree."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_name": {
+                    "type": "string",
+                    "default": "GN_Biomodel_Source",
+                    "description": "Canonical biomodel source Text block name.",
+                },
+            },
+        },
+    },
+    {
+        "name": "write_biomodel_source",
+        "description": (
+            "Write a complete revised GN_Biomodel_Source script to Blender's Text Editor without "
+            "executing it. This is the primary biomodel-source write path and succeeds independently "
+            "from write_script_draft/draft_finalize when source-specific validation passes."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_name": {
+                    "type": "string",
+                    "default": "GN_Biomodel_Source",
+                    "description": "Canonical biomodel source Text block name.",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "Complete Python source that regenerates VB_Biomodel_Generated.",
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Short summary of the source revision.",
+                },
+                "revision_kind": {
+                    "type": "string",
+                    "description": "Revision kind: create, refine, or recovery.",
+                },
+                "revision_changed_from_previous": {
+                    "type": "string",
+                    "description": "Short delta summary for this source revision.",
+                },
+            },
+            "required": ["code", "description"],
+        },
+    },
+    {
+        "name": "validate_biomodel_source",
+        "description": (
+            "Validate a complete biomodel source script, or the current GN_Biomodel_Source block "
+            "when block_name is supplied. It checks source-mode invariants without executing code."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "block_name": {
+                    "type": "string",
+                    "default": "GN_Biomodel_Source",
+                    "description": "Optional Text block to validate when code is omitted.",
+                },
+                "code": {
+                    "type": "string",
+                    "description": "Optional complete source code to validate.",
+                },
+            },
+        },
+    },
 ]
 
 

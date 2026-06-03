@@ -425,6 +425,9 @@ class RuntimeDispatcher:
         "write_script_draft":          "_tool_write_script_draft",
         "read_script_draft":           "_tool_read_script_draft",
         "seed_biomodel_source":        "_tool_seed_biomodel_source",
+        "read_biomodel_source":        "_tool_read_biomodel_source",
+        "write_biomodel_source":       "_tool_write_biomodel_source",
+        "validate_biomodel_source":    "_tool_validate_biomodel_source",
     }
 
     def __init__(self):
@@ -558,6 +561,15 @@ class RuntimeDispatcher:
         if state.get("session_id"):
             payload.setdefault("session_id", state.get("session_id"))
         return biomodel_source.handle_seed_biomodel_source(payload)
+
+    def _tool_read_biomodel_source(self, tool_input, **_):
+        return biomodel_source.handle_read_biomodel_source(tool_input)
+
+    def _tool_write_biomodel_source(self, tool_input, **_):
+        return biomodel_source.handle_write_biomodel_source(tool_input)
+
+    def _tool_validate_biomodel_source(self, tool_input, **_):
+        return biomodel_source.handle_validate_biomodel_source(tool_input)
 
     @staticmethod
     def _tree_hash(tree_data: dict[str, Any]) -> str:

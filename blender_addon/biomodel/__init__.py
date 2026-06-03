@@ -11,11 +11,13 @@ from .source_template import (
     SOURCE_TEMPLATE_VERSION,
     build_biomodel_source_template,
 )
+from .validation import BiomodelSourceValidation, validate_biomodel_source
 
 __all__ = [
     "BIOMODEL_SOURCE_BLOCK",
+    "BiomodelSourceValidation",
     "GENERATED_TREE_NAME",
     "SOURCE_TEMPLATE_VERSION",
     "build_biomodel_source_template",
+    "validate_biomodel_source",
 ]
-

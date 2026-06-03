@@ -496,6 +496,140 @@ class SlimHandlerSmokeTests(unittest.TestCase):
         self.assertEqual("VB_Biomodel_Generated", result["result"]["generated_tree_name"])
         self.assertTrue(result["result"]["manual_execution_required"])
 
+    def test_biomodel_source_tools_are_registered_in_schema_and_dispatcher(self):
+        from blender_addon.tools.handlers import HANDLERS
+        from blender_addon.tools.schemas import TOOLS
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        schema_names = {str(tool.get("name") or "") for tool in TOOLS}
+        for tool_name in ("read_biomodel_source", "write_biomodel_source", "validate_biomodel_source"):
+            self.assertIn(tool_name, schema_names)
+            self.assertIn(tool_name, HANDLERS)
+            self.assertIn(tool_name, RuntimeDispatcher._TOOL_HANDLERS)
+
+    def test_runtime_dispatcher_routes_biomodel_source_tools_through_source_module(self):
+        from blender_addon.tools import biomodel_source
+        from blender_addon.tools.server_dispatch import RuntimeDispatcher
+
+        dispatcher = RuntimeDispatcher()
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def _handler(label: str):
+            def _fake(tool_input):
+                calls.append((label, dict(tool_input)))
+                return {"status": "success", "result": {"label": label}}
+
+            return _fake
+
+        originals = {
+            "handle_read_biomodel_source": biomodel_source.handle_read_biomodel_source,
+            "handle_write_biomodel_source": biomodel_source.handle_write_biomodel_source,
+            "handle_validate_biomodel_source": biomodel_source.handle_validate_biomodel_source,
+        }
+        try:
+            biomodel_source.handle_read_biomodel_source = _handler("read")
+            biomodel_source.handle_write_biomodel_source = _handler("write")
+            biomodel_source.handle_validate_biomodel_source = _handler("validate")
+
+            read = dispatcher.execute("read_biomodel_source", {"block_name": "GN_Biomodel_Source"})
+            write = dispatcher.execute("write_biomodel_source", {"code": "source", "description": "test"})
+            validate = dispatcher.execute("validate_biomodel_source", {"code": "source"})
+        finally:
+            for name, original in originals.items():
+                setattr(biomodel_source, name, original)
+
+        self.assertEqual("success", read["status"])
+        self.assertEqual("success", write["status"])
+        self.assertEqual("success", validate["status"])
+        self.assertEqual(
+            [
+                ("read", {"block_name": "GN_Biomodel_Source"}),
+                ("write", {"code": "source", "description": "test"}),
+                ("validate", {"code": "source"}),
+            ],
+            calls,
+        )
+
+    def test_write_biomodel_source_succeeds_without_draft_writer(self):
+        from blender_addon.biomodel.source_template import build_biomodel_source_template
+        from blender_addon.tools import draft
+        from blender_addon.tools.biomodel_source import (
+            handle_read_biomodel_source,
+            handle_write_biomodel_source,
+        )
+
+        class _FakeText:
+            def __init__(self, name: str):
+                self.name = name
+                self._content = ""
+                self._props: dict[str, Any] = {}
+
+            @property
+            def lines(self):
+                return self._content.splitlines() or [""]
+
+            def as_string(self):
+                return self._content
+
+            def write(self, text: str):
+                self._content += text
+
+            def clear(self):
+                self._content = ""
+
+            def get(self, key: str, default: Any = None):
+                return self._props.get(key, default)
+
+            def __setitem__(self, key: str, value: Any):
+                self._props[key] = value
+
+        class _FakeTexts(dict):
+            def new(self, name: str):
+                text = _FakeText(name)
+                self[name] = text
+                return text
+
+            def __iter__(self):
+                return iter(self.values())
+
+        sys.modules["bpy"].data.texts = _FakeTexts()
+
+        original_write = draft.handle_write_script_draft
+        try:
+            draft.handle_write_script_draft = lambda _tool_input: (_ for _ in ()).throw(
+                AssertionError("write_biomodel_source must not use write_script_draft")
+            )
+            written = handle_write_biomodel_source({
+                "block_name": "GN_Biomodel_Source",
+                "code": build_biomodel_source_template(),
+                "description": "Direct source-mode write",
+            })
+        finally:
+            draft.handle_write_script_draft = original_write
+
+        self.assertEqual("success", written["status"])
+        self.assertEqual("GN_Biomodel_Source", written["result"]["source_block_name"])
+        self.assertTrue(written["result"]["validation"]["valid"])
+        self.assertTrue(written["result"]["manual_execution_required"])
+
+        read = handle_read_biomodel_source({"block_name": "GN_Biomodel_Source"})
+        self.assertEqual("success", read["status"])
+        self.assertIn("VB_Biomodel_Generated", read["result"]["content"])
+
+    def test_validate_biomodel_source_blocks_reference_tree_mutation(self):
+        from blender_addon.biomodel.source_template import build_biomodel_source_template
+        from blender_addon.tools.biomodel_source import handle_validate_biomodel_source
+
+        code = build_biomodel_source_template() + "\n" + (
+            "bpy.data.node_groups.remove(bpy.data.node_groups.get('Biomodelo'))\n"
+        )
+
+        result = handle_validate_biomodel_source({"code": code})
+
+        self.assertEqual("blocked", result["status"])
+        self.assertFalse(result["result"]["valid"])
+        self.assertIn("mutates_reference_tree:Biomodelo", result["result"]["errors"])
+
     def test_runtime_dispatcher_routes_focal_reads_through_reads_module(self):
         from blender_addon.tools import reads
         from blender_addon.tools.server_dispatch import RuntimeDispatcher

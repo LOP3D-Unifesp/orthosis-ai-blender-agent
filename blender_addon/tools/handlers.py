@@ -84,6 +84,8 @@ HANDLERS = {
     "get_selected_nodes_context": handle_get_selected_nodes_context,
     "get_active_frame_context": handle_get_active_frame_context,
     "get_local_subgraph_context": handle_get_local_subgraph_context,
+    "list_tree_nodes": handle_list_tree_nodes,
+    "find_tree_nodes": handle_find_tree_nodes,
     "apply_renames": handle_apply_renames,
     "apply_collections": handle_apply_collections,
     "apply_gn_edits": handle_apply_gn_edits,

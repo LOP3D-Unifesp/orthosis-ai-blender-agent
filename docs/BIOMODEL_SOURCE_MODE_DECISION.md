@@ -1,296 +1,157 @@
 # Biomodel Source Mode Decision
 
 > Branch: `codex/biomodel-source-migration`
-> Status: accepted for this branch
-> Decision date: 2026-06-03
+> Status original (2026-06-03): source-mode/rebuild aceito como caminho primário.
+> **Decisão revisada (2026-06-10): source-mode/rebuild rebaixado para consolidação/exportação. Caminho primário é agora árvore viva + patches incrementais via bridge.**
+> Validação do ciclo incremental: `smoke_bridge.py` 5/5 passos ok.
 
 ---
 
-## 1. Decision
+## 1. Decisão Atual (2026-06-10)
 
-The primary path for the biomodel is now a separate source-driven workflow:
+O caminho primário de construção do biomodelo é:
 
 ```text
-GN_Biomodel_Source -> VB_Biomodel_Generated
+árvore viva Biomodelo  →  patches incrementais via bridge  →  verificação imediata
 ```
 
-The existing draft-mutation workflow remains available as legacy infrastructure, but it is no longer the strategic path for building the parametrized upper-limb biomodel.
+O operador nesta fase é o próprio designer usando Claude Code + socket bridge (porta 65432).
+O agente embarcado no painel Blender não é prioridade nesta fase.
 
-This means:
+O source-mode (`GN_Biomodel_Source → VB_Biomodel_Generated`) permanece disponível,
+mas como **modo de consolidação/exportação**, não como loop de experimentação.
 
-1. `GN_Biomodel_Source` is the canonical biomodel source.
-2. `VB_Biomodel_Generated` is disposable output.
-3. `Biomodelo` is a read-only clinical/reference tree by default.
-4. The agent should edit source, not patch the live clinical tree.
-5. The old `GN_Agent_Draft` workflow is legacy for general/manual tree mutation tasks.
-6. The new source mode should not be forced through finalizers that expect `write_script_draft` against `GN_Agent_Draft`.
+Isso significa:
+
+1. A árvore `Biomodelo` viva no Blender é o ambiente de desenvolvimento.
+2. Cada mudança é um script Python pequeno, autocontido, verificável e reversível quando possível.
+3. O bridge (`BlenderConnection` / canal direto `HANDLERS`) é a superfície de execução.
+4. A verificação é por re-leitura imediata via bridge, não por diff/session marker.
+5. O script mestre é o artefato final consolidado depois que a árvore estiver validada.
+6. Snapshots são feitos apenas em marcos importantes, não a cada patch.
+7. `GN_Biomodel_Source` é usado para consolidar/exportar seções prontas, não para explorar.
 
 ---
 
-## 2. Why
+## 2. Por que a decisão mudou
 
-The old architecture solves a harder and different product problem:
+A decisão original (2026-06-03) apostou que "escrever o source completo a cada turno" seria mais simples.
+Na prática, produziu o problema que motivou a branch: cada turno virava um rebuild monolítico.
 
-```text
-read partial live tree -> write mutation script -> user runs it -> live tree changes -> repeat
-```
-
-That path needs routing, context gates, structural memory, draft validation, repair loops, pending decisions, rollback expectations, and safety rules because the source of truth is a mutable Blender node tree.
-
-The biomodel-source path is simpler:
+O que a tentativa revelou:
 
 ```text
-read source + optional reference inventory -> write complete source -> user runs source -> generated tree is rebuilt
+complete source → intentional rebuild
 ```
 
-Trying to fit this new product into the old draft-mutation pipeline already caused unnecessary coupling: a seed request for `GN_Biomodel_Source` was judged by a finalizer that only knew how to look for `write_script_draft`.
+é melhor como fase final de consolidação do que como loop de experimentação porque:
 
-That is the architectural signal this branch accepts.
+1. Requer que o agente mantenha o estado completo da árvore na memória.
+2. Qualquer erro num turno desfaz toda a estrutura do turno anterior.
+3. A verificação de "funcionou?" exige rodar o script inteiro, não um patch isolado.
+4. O ciclo de feedback (errou → corrigiu → rodou → verificou) é mais lento.
+
+O caminho incremental (patches pequenos sobre a árvore viva) resolve todos esses problemas
+porque cada passo é verificável isoladamente antes de avançar.
 
 ---
 
-## 3. Product Boundary
+## 3. Caminhos disponíveis
 
-### Legacy: Draft Mutation
-
-Legacy path:
+### Primário: patches incrementais via bridge
 
 ```text
-GN_Agent_Draft -> mutates an existing live Geometry Nodes tree
+Claude Code + BlenderConnection → execute_code (patch pequeno) → verify (re-leitura)
 ```
 
-Use it only when the user explicitly asks to patch or repair an existing live tree.
+Usar quando:
+- construindo ou evoluindo a árvore Biomodelo;
+- adicionando nós, conectando, ajustando valores;
+- explorando como implementar um comportamento novo.
 
-It may continue to use:
+Ferramentas no canal direto (sem policy gates):
+- `list_tree_nodes` — inventário completo
+- `find_tree_nodes` — busca por nome/label/tipo
+- `get_node_context` — inspeção focal de um nó e vizinhança
+- `execute_code` — execução de patch autocontido
+- `capture_scene` — estado geral da cena
 
-1. `handler/workspace.py` draft goals;
-2. `draft_policy.py`;
-3. `draft_finalize.py`;
-4. `write_script_draft`;
-5. `read_script_draft`;
-6. focused node reads;
-7. repair/feedback loops.
-
-Do not grow this path for biomodel-source work unless the change is a small compatibility fix.
-
-### Primary: Biomodel Source Mode
-
-Primary path:
+### Consolidação/Exportação: source-mode
 
 ```text
-GN_Biomodel_Source -> generates VB_Biomodel_Generated
+GN_Biomodel_Source → VB_Biomodel_Generated (rebuild quando seção está pronta)
 ```
 
-Use it when the user asks to create, evolve, parametrize, regenerate, or reason about the biomodel source.
+Usar quando:
+- uma seção da árvore já está validada e estável;
+- exportando para ter um artefato reproduzível;
+- gerando o script mestre do biomodelo.
 
-It should have a small direct surface:
+Ferramentas disponíveis:
+- `inspect_tree_inventory` — inventário paginado completo para extração
+- `export_tree_inventory` — artefato JSON + Markdown para análise offline
+- `write_biomodel_source` — escrever o source consolidado
+- `validate_biomodel_source` — validar invariantes do source
 
-1. seed source;
-2. read source;
-3. write complete source;
-4. inspect/export reference tree inventory;
-5. validate source invariants;
-6. optionally inspect generated tree after manual execution.
+### Legado: draft mutation (`GN_Agent_Draft`)
 
-It should not depend on:
-
-1. `GN_Agent_Draft`;
-2. live-tree mutation as the main behavior;
-3. old draft finalization rules;
-4. focal node reads as the default source of truth;
-5. automatic execution of generated Python.
+Usar apenas quando o usuário pedir explicitamente para patchear uma árvore
+via o painel de chat embarcado no Blender.
 
 ---
 
-## 4. Reuse Map
+## 4. Mapa de reúso
 
-### Keep And Reuse
+### Manter e usar no caminho primário
 
-| Area | How it helps source mode |
+| Área | Papel |
 |---|---|
-| Blender socket bridge | stable connection to Blender |
-| Text Editor write/read primitives | useful for `GN_Biomodel_Source` storage |
-| `inspect_tree_inventory` | complete reference-tree navigation |
-| `export_tree_inventory` | offline source/DSL extraction artifact |
-| `operation_journal` | debug trace for source-mode turns |
-| session/chat persistence | keeps UI and history stable |
-| snapshots | still useful before manual execution |
-| tests/fake bpy harness | safe local regression testing |
-| `blender_addon/biomodel/*` | home for source template, DSL, backend, validation |
+| `server.py` / `BlenderBridgeServer` | bridge TCP — spine do canal direto |
+| `tools/handlers.py` `HANDLERS` | handlers diretos sem gate |
+| `tools/execution.py` `handle_execute_code` | primitivo de patch |
+| `tools/reads.py` (`list_tree_nodes`, `find_tree_nodes`, `get_node_context`, ...) | inspeção da árvore viva |
+| `blender_connection.py` `BlenderConnection` | cliente TCP do lado Claude Code |
+| `smoke_bridge.py` | smoke test do ciclo mínimo |
+| `snapshot_manager.py` | snapshots em marcos importantes |
 
-### Legacy But Keep Available
+### Manter para consolidação/exportação
 
-| Area | Legacy role |
+| Área | Papel |
 |---|---|
-| `GN_Agent_Draft` | mutation-script Text block |
-| draft workspace goals | general tree mutation and repair |
-| `draft_policy.py` | safety gates for mutation drafts |
-| `draft_finalize.py` | old write/no-write interpretation |
-| feedback repair loop | post-run repair of mutation drafts |
-| focal node reads | targeted investigation of existing trees |
+| `biomodel/source_template.py` | dado de referência — parâmetros/regiões da árvore atual |
+| `biomodel/validation.py` | gate de invariantes do source consolidado |
+| `tools/biomodel_source.py` | seed/read/write/validate do source completo |
+| `server_dispatch` `inspect/export_tree_inventory` | extração full-tree para serialização |
 
-### Avoid For New Source Mode
+### Rebaixado / fora do hot path incremental
 
-| Area | Reason |
+| Área | Situação |
 |---|---|
-| treating prompt summaries as full tree context | loses structure |
-| patching `Biomodelo` by default | wrong source of truth |
-| using `GN_Agent_Draft` as biomodel source | mixes products |
-| requiring `write_script_draft` finalization | couples source mode to legacy draft semantics |
-| introducing `nodebpy` as a dependency now | compatibility/license still undecided |
+| `core/runtime.py` (AgentRuntime) | agente embarcado — fora do hot path nesta fase |
+| `core/agent_loop.py`, `api_client.py` | idem |
+| `runtime/router.py`, `pending_decision.py` | roteamento PT de chat |
+| `handler/workspace.py`, `handler/draft_*` | goal modes, repair loops, economy_retry |
+| `session/` stores | persistência de sessão de chat |
+| `ui/` chat panel | interface para usuário final |
 
 ---
 
-## 5. Source Mode Target Architecture
+## 5. Invariantes (atualizadas)
 
-Initial shape:
-
-```text
-blender_addon/
-  biomodel/
-    __init__.py
-    source_template.py       # current phase-1 seed template
-    dsl.py                   # future biomodel vocabulary
-    bpy_backend.py           # future raw bpy node authoring backend
-    validation.py            # future source/generated-tree invariants
-
-  tools/
-    biomodel_source.py       # source-mode tools
-
-  handler/
-    biomodel_source.py       # future direct source-mode turn handler
-```
-
-Current transitional state:
-
-1. `tools/biomodel_source.py` exists and can seed `GN_Biomodel_Source`.
-2. `source_template.py` exists and generates `VB_Biomodel_Generated`.
-3. `handler/workspace.py` has a temporary direct shortcut for `seed_biomodel_source`.
-
-Target state:
-
-1. source-mode requests route to `handler/biomodel_source.py`;
-2. source-mode tools do not depend on legacy draft finalization;
-3. `GN_Biomodel_Source` read/write has explicit validation for source invariants;
-4. the old workspace handler does not need biomodel-specific shortcuts.
+1. `Biomodelo` não é mutado sem pedido explícito — permanece como referência.
+2. Cada patch incremental é um script Python autocontido com print de verificação.
+3. O script é executado via `execute_code` no canal direto do bridge.
+4. A verificação é por re-leitura imediata (`get_node_context` / `list_tree_nodes`).
+5. Snapshots `.blend` são feitos apenas em marcos, não a cada patch.
+6. `GN_Biomodel_Source` é escrito apenas quando uma seção está validada e pronta para consolidar.
+7. `VB_Biomodel_Generated` é descartável — pode ser recriado do source.
+8. O agente embarcado (`AgentRuntime`, painel de chat) não é o canal de pilotagem nesta fase.
 
 ---
 
-## 6. Invariants
+## 6. Próximo passo concreto
 
-These rules define correctness for this branch:
+O ciclo mínimo está validado (`smoke_bridge.py` 5/5).
 
-1. `Biomodelo` is not mutated unless the user explicitly asks.
-2. `GN_Biomodel_Source` is the only canonical source for the generated biomodel.
-3. `VB_Biomodel_Generated` can be deleted and recreated.
-4. Source-mode writes are complete-source writes, not tiny patch fragments.
-5. Manual execution remains the default safety boundary.
-6. Inventory artifacts are reference knowledge, not a replacement for source.
-7. Stable raw `bpy` patterns can be promoted into the DSL/helper layer.
-8. `nodebpy` remains optional until a later decision.
-
----
-
-## 7. Implementation Plan
-
-### Phase A: Declare The Boundary
-
-Status: in progress.
-
-1. Add this decision document.
-2. Update migration docs to mark draft mutation as legacy.
-3. Identify reused modules vs legacy modules.
-
-### Phase B: Isolate Source Tools
-
-Goal:
-
-Create a small source-mode tool surface independent from old draft finalization.
-
-Tools:
-
-1. `seed_biomodel_source`;
-2. `read_biomodel_source`;
-3. `write_biomodel_source`;
-4. `validate_biomodel_source`;
-5. `inspect_generated_biomodel`.
-
-Exit:
-
-The seed/read/write path works without the model needing to call `write_script_draft` directly.
-
-### Phase C: Direct Source Handler
-
-Goal:
-
-Route source-mode user requests into a dedicated handler.
-
-Behavior:
-
-1. detect source-mode intent;
-2. read current source;
-3. read inventory only when needed;
-4. ask the model for a full revised source;
-5. write source with source-specific validation;
-6. respond with a concise review summary.
-
-Exit:
-
-No biomodel-source request depends on the legacy draft workspace finalizer.
-
-### Phase D: Source Validation
-
-Goal:
-
-Before saving, enforce source invariants.
-
-Initial checks:
-
-1. source mentions `GN_Biomodel_Source`;
-2. generated tree name is `VB_Biomodel_Generated`;
-3. source does not target/remove `Biomodelo`;
-4. source defines all required interface parameters;
-5. source creates one Geometry output;
-6. source compiles as Python outside Blender.
-
-### Phase E: Helper/DSL Extraction
-
-Goal:
-
-Move repeated raw `bpy` authoring into `blender_addon/biomodel/`.
-
-Start with:
-
-1. parameters;
-2. regions;
-3. primitive segment nodes;
-4. joins;
-5. pose transforms.
-
-### Phase F: Module Parity
-
-Goal:
-
-Rebuild the reference tree behavior module by module in source:
-
-1. interface;
-2. forearm/wrist;
-3. metacarpals;
-4. finger chains;
-5. thumb;
-6. wrist/thumb poses;
-7. final assembly.
-
----
-
-## 8. Next Concrete Step
-
-Implement Phase B:
-
-```text
-read_biomodel_source
-write_biomodel_source
-validate_biomodel_source
-```
-
-Then move the temporary seed shortcut out of `handler/workspace.py` into a dedicated source-mode handler.
+Próximo: identificar a primeira seção da árvore `Biomodelo` (126 nós) a evoluir via patches
+incrementais, inspecionar essa seção via bridge e escrever o primeiro patch real de construção.

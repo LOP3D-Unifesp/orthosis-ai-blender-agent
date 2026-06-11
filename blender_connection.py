@@ -123,6 +123,30 @@ class BlenderConnection:
             "operations": operations,
         })
 
+    def list_tree_nodes(self, tree_name: str) -> dict:
+        """List all nodes in a GN tree. Direct read, no policy gates."""
+        return self.send_command({"type": "list_tree_nodes", "tree_name": tree_name})
+
+    def find_tree_nodes(self, tree_name: str, *, name_contains: str = "", label_contains: str = "", bl_idname: str = "") -> dict:
+        """Search nodes by name/label/type fragment. Direct read, no policy gates."""
+        cmd: dict = {"type": "find_tree_nodes", "tree_name": tree_name}
+        if name_contains:
+            cmd["name_contains"] = name_contains
+        if label_contains:
+            cmd["label_contains"] = label_contains
+        if bl_idname:
+            cmd["bl_idname"] = bl_idname
+        return self.send_command(cmd)
+
+    def get_node_context(self, tree_name: str, node_name: str, *, radius: int = 1) -> dict:
+        """Read one node and its neighborhood. Direct read, no policy gates."""
+        return self.send_command({
+            "type": "get_node_context",
+            "tree_name": tree_name,
+            "node_name": node_name,
+            "radius": radius,
+        })
+
     def execute_code(self, code: str) -> dict:
         return self.send_command({"type": "execute_code", "code": code})
 

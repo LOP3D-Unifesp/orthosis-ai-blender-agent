@@ -11,9 +11,6 @@ from ..biomodel import (
     build_biomodel_source_template,
     validate_biomodel_source,
 )
-from . import draft
-
-
 def _source_payload_from_block(text_block: Any, *, source: str = "text_block") -> dict[str, Any]:
     content = str(text_block.as_string() or "")
     validation = validate_biomodel_source(content).as_dict()
@@ -164,7 +161,7 @@ def handle_seed_biomodel_source(cmd: dict[str, Any]) -> dict[str, Any]:
     """
     block_name = str(cmd.get("block_name") or BIOMODEL_SOURCE_BLOCK).strip()
     code = build_biomodel_source_template()
-    write_input = {
+    result = handle_write_biomodel_source({
         "block_name": block_name,
         "code": code,
         "description": (
@@ -173,35 +170,7 @@ def handle_seed_biomodel_source(cmd: dict[str, Any]) -> dict[str, Any]:
         ),
         "revision_kind": "create",
         "revision_changed_from_previous": "Seeded phase-1 biomodel source prototype.",
-        "allow_tree_change": True,
-        "allow_capability_regression": True,
-        "edit_mode": "intentional_rebuild",
-        "goal_mode": "biomodel_source",
-        "goal_guidance": {
-            "source_block": block_name,
-            "generated_tree": GENERATED_TREE_NAME,
-            "source_template_version": SOURCE_TEMPLATE_VERSION,
-            "does_not_mutate_reference_tree": True,
-        },
-        "expected_parameter_refs": [
-            "Comp Antebraço",
-            "Raio Cotovelo",
-            "Raio Punho",
-            "Comp Metacarpo",
-            "Largura Metacarpo",
-            "Espessura Metacarpo",
-        ],
-        "expected_focus_regions": [
-            "Antebraço",
-            "Polegar",
-            "Desvio e Ext/Flex Punho",
-            "Metacarpos",
-        ],
-    }
-    for key in ("session_id", "project_root"):
-        if cmd.get(key):
-            write_input[key] = cmd.get(key)
-    result = draft.handle_write_script_draft(write_input)
+    })
     if result.get("status") == "success" and isinstance(result.get("result"), dict):
         result["result"]["source_block_name"] = block_name
         result["result"]["generated_tree_name"] = GENERATED_TREE_NAME

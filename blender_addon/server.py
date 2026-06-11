@@ -1,8 +1,9 @@
 """TCP socket bridge running inside Blender.
 
-Supports:
-  - direct low-level handlers (capture_scene, execute_code, etc.)
-  - unified runtime endpoints (runtime_tool_call, runtime_set_modes, runtime_get_session)
+Listens on localhost:65432. Each connection receives one JSON command and
+returns one JSON response. Protocol: 8-byte ASCII length prefix + UTF-8 JSON.
+
+All commands are dispatched through HANDLERS in tools/handlers.py.
 """
 
 from __future__ import annotations
@@ -10,28 +11,14 @@ from __future__ import annotations
 import json
 import socket
 import threading
+import time
 import traceback
-from pathlib import Path
 
 from .tools.handlers import HANDLERS
-from .project_paths import resolve_project_root
-from .runtime import Runtime
-
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 65432
 RECV_CHUNK = 65536
-
-
-def _resolve_project_root() -> Path:
-    """Resolve project root for session/journal persistence."""
-    return resolve_project_root()
-
-
-# Compatibility alias for callers and tests that still import the old name
-# during the convergence window. The live socket path now instantiates
-# Runtime directly.
-RuntimeBridgeCore = Runtime
 
 
 class BlenderBridgeServer:
@@ -41,19 +28,11 @@ class BlenderBridgeServer:
         self._thread: threading.Thread | None = None
         self._running = False
         self._sock: socket.socket | None = None
-        project_root = _resolve_project_root()
-        self._runtime = Runtime(project_root=project_root)
+        self._last_connection_at: str = ""
 
     @property
     def running(self) -> bool:
         return self._running and self._thread is not None and self._thread.is_alive()
-
-    def refresh_runtime(self) -> Path:
-        project_root = _resolve_project_root()
-        current_root = Path(getattr(self._runtime, "project_root", project_root))
-        if current_root != project_root:
-            self._runtime = Runtime(project_root=project_root)
-        return project_root
 
     def start(self):
         if self.running:
@@ -92,6 +71,7 @@ class BlenderBridgeServer:
                 if not self._running:
                     conn.close()
                     break
+                self._last_connection_at = time.strftime("%H:%M:%S")
                 try:
                     self._handle_connection(conn)
                 except Exception as exc:
@@ -122,78 +102,13 @@ class BlenderBridgeServer:
             return
 
         cmd_type = cmd.get("type", "")
-        if cmd_type == "runtime_tool_call":
-            try:
-                response = self._runtime.execute_tool_call(
-                    tool_name=cmd.get("tool_name", ""),
-                    tool_input=cmd.get("tool_input", {}) or {},
-                    route=cmd.get("route", "mcp"),
-                    output_mode=cmd.get("output_mode", "compact"),
-                    user_confirmed=bool(cmd.get("user_confirmed", False)),
-                    debug_mode=cmd.get("debug_mode"),
-                    explicit_override_mode=cmd.get("explicit_override_mode"),
-                    mcp_write_enabled=cmd.get("mcp_write_enabled"),
-                    blend_path=cmd.get("blend_path"),
-                    journal_session_id=cmd.get("journal_session_id"),
-                    journal_run_id=cmd.get("journal_run_id"),
-                    journal_goal_id=cmd.get("journal_goal_id"),
-                )
-            except Exception as exc:
-                response = {
-                    "status": "error",
-                    "error": f"runtime_tool_call crashed server-side: {exc}",
-                    "tool_name": cmd.get("tool_name", ""),
-                    "traceback": traceback.format_exc(),
-                }
-            self._send(conn, response)
-            return
-
-        if cmd_type == "runtime_set_modes":
-            state = self._runtime.set_modes(
-                blend_path=cmd.get("blend_path"),
-                debug_mode=cmd.get("debug_mode"),
-                explicit_override_mode=cmd.get("explicit_override_mode"),
-                mcp_write_enabled=cmd.get("mcp_write_enabled"),
-                agent_session_active=cmd.get("agent_session_active"),
-                reset_session_memory=bool(cmd.get("reset_session_memory", False)),
-                start_new_session=bool(cmd.get("start_new_session", False)),
-                reset_transient_state=bool(cmd.get("reset_transient_state", False)),
-                control_source=cmd.get("control_source"),
-                drafting_mode=cmd.get("drafting_mode"),
-                simulate_bridge_failure=cmd.get("simulate_bridge_failure"),
-            )
-            if bool(state.get("control_update_blocked", False)):
-                self._send(
-                    conn,
-                    {
-                        "status": "blocked",
-                        "error": "Control update blocked by single control owner policy.",
-                        "result": state,
-                    },
-                )
-            else:
-                self._send(conn, {"status": "success", "result": state})
-            return
-
-        if cmd_type == "runtime_get_session":
-            state = self._runtime.get_session_state(blend_path=cmd.get("blend_path"))
-            self._send(conn, {"status": "success", "result": state})
-            return
-
         handler = HANDLERS.get(cmd_type)
         if handler is None:
-            self._send(
-                conn,
-                {
-                    "status": "error",
-                    "error": f"Unknown command: {cmd_type}",
-                    "available": list(HANDLERS.keys()) + [
-                        "runtime_tool_call",
-                        "runtime_set_modes",
-                        "runtime_get_session",
-                    ],
-                },
-            )
+            self._send(conn, {
+                "status": "error",
+                "error": f"Unknown command: {cmd_type!r}",
+                "available": sorted(HANDLERS.keys()),
+            })
             return
 
         try:
@@ -248,10 +163,6 @@ class BlenderBridgeServer:
 
 
 _server = BlenderBridgeServer()
-
-
-def refresh_runtime_project_root() -> Path:
-    return _server.refresh_runtime()
 
 
 def register():

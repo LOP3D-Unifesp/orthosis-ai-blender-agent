@@ -110,19 +110,6 @@ class BlenderConnection:
             raise BlenderConnectionError(f"Capture failed: {result.get('error', 'unknown')}")
         return result["result"]
 
-    def apply_renames(self, renames: list[dict]) -> dict:
-        return self.send_command({"type": "apply_renames", "renames": renames})
-
-    def apply_collections(self, moves: list[dict]) -> dict:
-        return self.send_command({"type": "apply_collections", "moves": moves})
-
-    def apply_gn_edits(self, target_tree: str, operations: list[dict]) -> dict:
-        return self.send_command({
-            "type": "apply_gn_edits",
-            "target_tree": target_tree,
-            "operations": operations,
-        })
-
     def list_tree_nodes(self, tree_name: str) -> dict:
         """List all nodes in a GN tree. Direct read, no policy gates."""
         return self.send_command({"type": "list_tree_nodes", "tree_name": tree_name})
@@ -150,67 +137,36 @@ class BlenderConnection:
     def execute_code(self, code: str) -> dict:
         return self.send_command({"type": "execute_code", "code": code})
 
-    def undo(self) -> dict:
-        return self.send_command({"type": "undo"})
+    # ----- Validation + typed mutations -----
 
-    def runtime_tool_call(
-        self,
-        *,
-        tool_name: str,
-        tool_input: dict | None = None,
-        route: str = "mcp",
-        output_mode: str = "compact",
-        user_confirmed: bool = False,
-        debug_mode: bool | None = None,
-        explicit_override_mode: bool | None = None,
-        mcp_write_enabled: bool | None = None,
-    ) -> dict:
-        cmd = {
-            "type": "runtime_tool_call",
-            "tool_name": tool_name,
-            "tool_input": tool_input or {},
-            "route": route,
-            "output_mode": output_mode,
-            "user_confirmed": bool(user_confirmed),
-        }
-        if debug_mode is not None:
-            cmd["debug_mode"] = bool(debug_mode)
-        if explicit_override_mode is not None:
-            cmd["explicit_override_mode"] = bool(explicit_override_mode)
-        if mcp_write_enabled is not None:
-            cmd["mcp_write_enabled"] = bool(mcp_write_enabled)
+    def evaluate_geometry(self, obj: str, *, sample: int = 0) -> dict:
+        return self.send_command({"type": "evaluate_geometry", "object": obj, "sample": sample})
+
+    def render_viewport(self, obj: str, *, view: str = "iso", path: str = "", resolution: int = 640) -> dict:
+        cmd: dict = {"type": "render_viewport", "object": obj, "view": view, "resolution": resolution}
+        if path:
+            cmd["path"] = path
         return self.send_command(cmd)
 
-    def runtime_set_modes(
-        self,
-        *,
-        debug_mode: bool | None = None,
-        explicit_override_mode: bool | None = None,
-        mcp_write_enabled: bool | None = None,
-        agent_session_active: bool | None = None,
-        reset_session_memory: bool | None = None,
-        start_new_session: bool | None = None,
-        reset_transient_state: bool | None = None,
-        control_source: str | None = None,
-    ) -> dict:
-        cmd = {"type": "runtime_set_modes"}
-        if debug_mode is not None:
-            cmd["debug_mode"] = bool(debug_mode)
-        if explicit_override_mode is not None:
-            cmd["explicit_override_mode"] = bool(explicit_override_mode)
-        if mcp_write_enabled is not None:
-            cmd["mcp_write_enabled"] = bool(mcp_write_enabled)
-        if agent_session_active is not None:
-            cmd["agent_session_active"] = bool(agent_session_active)
-        if reset_session_memory is not None:
-            cmd["reset_session_memory"] = bool(reset_session_memory)
-        if start_new_session is not None:
-            cmd["start_new_session"] = bool(start_new_session)
-        if reset_transient_state is not None:
-            cmd["reset_transient_state"] = bool(reset_transient_state)
-        if control_source is not None:
-            cmd["control_source"] = str(control_source)
-        return self.send_command(cmd)
+    def set_param(self, obj: str, identifier: str, value) -> dict:
+        return self.send_command({"type": "set_param", "object": obj, "identifier": identifier, "value": value})
 
-    def runtime_get_session(self) -> dict:
-        return self.send_command({"type": "runtime_get_session"})
+    def resolve_node(self, tree_name: str, ref: str) -> dict:
+        return self.send_command({"type": "resolve_node", "tree_name": tree_name, "ref": ref})
+
+    def set_node_input(self, tree_name: str, node: str, socket, value) -> dict:
+        return self.send_command({
+            "type": "set_node_input", "tree_name": tree_name, "node": node, "socket": socket, "value": value,
+        })
+
+    def link_sockets(self, tree_name: str, from_node: str, from_socket, to_node: str, to_socket) -> dict:
+        return self.send_command({
+            "type": "link_sockets", "tree_name": tree_name,
+            "from_node": from_node, "from_socket": from_socket,
+            "to_node": to_node, "to_socket": to_socket,
+        })
+
+    def add_node(self, tree_name: str, bl_idname: str, **kwargs) -> dict:
+        cmd = {"type": "add_node", "tree_name": tree_name, "bl_idname": bl_idname}
+        cmd.update(kwargs)
+        return self.send_command(cmd)

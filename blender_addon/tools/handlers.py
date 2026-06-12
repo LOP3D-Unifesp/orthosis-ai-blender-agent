@@ -29,16 +29,39 @@ from .reads import (
     handle_list_tree_nodes,
 )
 from .snapshots import handle_capture_full, handle_capture_node_trees, handle_capture_scene
+from .validation_tools import (
+    handle_add_node,
+    handle_evaluate_geometry,
+    handle_link_sockets,
+    handle_render_viewport,
+    handle_resolve_node,
+    handle_set_node_input,
+    handle_set_param,
+)
 
 
-_MAIN_THREAD_TIMEOUT = 15.0
+# Ordered below the server conn timeout (30s) and the client timeout (60s) so a
+# slow main-thread op fails here first with a clean message instead of a socket
+# reset.
+_MAIN_THREAD_TIMEOUT = 25.0
 
 
 def execute_in_main_thread(func):
-    """Run ``func`` on Blender's main thread and block until completion."""
+    """Run ``func`` on Blender's main thread and block until completion.
+
+    If the main thread does not pick up the work before the deadline we mark the
+    job cancelled and return a timeout error. The cancellation flag is checked
+    inside the timer callback so a late-firing timer does NOT run ``func`` (and
+    therefore cannot apply a mutation) after the caller already gave up. This
+    closes the orphaned-timer hazard where a patch could land silently after a
+    reported timeout.
+    """
     result: dict[str, Any] = {}
+    state = {"cancelled": False}
 
     def _wrapper():
+        if state["cancelled"]:
+            return None
         try:
             result["data"] = func()
         except Exception as exc:
@@ -47,6 +70,7 @@ def execute_in_main_thread(func):
                 "error": str(exc),
                 "traceback": traceback.format_exc(),
             }
+        return None
 
     if threading.current_thread() is threading.main_thread():
         _wrapper()
@@ -56,12 +80,13 @@ def execute_in_main_thread(func):
     deadline = time.monotonic() + _MAIN_THREAD_TIMEOUT
     while "data" not in result:
         if time.monotonic() > deadline:
+            state["cancelled"] = True
             return {
                 "status": "error",
                 "error": "Blender main thread did not respond within "
-                         f"{_MAIN_THREAD_TIMEOUT:.0f}s.",
+                         f"{_MAIN_THREAD_TIMEOUT:.0f}s (job cancelled; no mutation applied).",
             }
-        time.sleep(0.01)
+        time.sleep(0.005)
     return result["data"]
 
 
@@ -79,6 +104,14 @@ HANDLERS = {
     "get_local_subgraph_context": handle_get_local_subgraph_context,
     # Execution
     "execute_code": handle_execute_code,
+    # Validation + typed mutations
+    "evaluate_geometry": handle_evaluate_geometry,
+    "render_viewport": handle_render_viewport,
+    "set_param": handle_set_param,
+    "resolve_node": handle_resolve_node,
+    "set_node_input": handle_set_node_input,
+    "link_sockets": handle_link_sockets,
+    "add_node": handle_add_node,
     # Biomodel source (consolidation path)
     "seed_biomodel_source": handle_seed_biomodel_source,
     "read_biomodel_source": handle_read_biomodel_source,

@@ -21,6 +21,14 @@ import argparse
 import sys
 import textwrap
 
+# Windows consoles default to cp1252 and choke on the accented/emoji output the
+# bridge returns. Force UTF-8 so printing tree labels never raises.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 from blender_connection import BlenderConnection, BlenderConnectionError
 
 

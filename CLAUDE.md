@@ -101,6 +101,34 @@ conn.execute_code("import bpy; print('ok')")               # patch
 
 > **Atualizar esta seção após cada sessão.**
 
+### Fase 3 — consolidação no GN_Biomodel_Source — CONCLUÍDA (2026-06-12)
+
+**`GN_Biomodel_Source` v1 registrado no Text Editor** (629 linhas, validação 0 erros / 0 warnings) e commitado no repo em `biomodel_source/GN_Biomodel_Source_v1.py`. Executá-lo no Blender cria/substitui apenas `VB_FK_Cadeia_Dedo` + `VB_Biomodel_Generated` (ambos com fake_user; existem no .blend salvo).
+
+- **Formato**: data-driven — tabelas (INTERFACE com 5 painéis/41 sockets, GROUP_NODES/LINKS do grupo FK, NODES/LINKS da árvore) + motor de construção (~100 linhas). Defaults = valores clínicos do modifier no momento da consolidação (afinados pelo usuário contra o scan).
+- **Verificação**: árvore gerada em objeto temporário reproduz a árvore viva **vértice a vértice** em 4 poses com o vetor completo de 41 parâmetros fixado (desvio 1e-4).
+- **Armadilhas resolvidas (gerador)**: (1) sockets de Group Input/Output e instâncias de grupo endereçados por **nome** — identifiers `Socket_N` são re-atribuídos a cada rebuild; (2) ordem de join multi-input vem de `link.multi_input_sort_id`, **não** da ordem de `tree.links` — sem isso os vértices permutam; (3) verificação precisa fixar todos os parâmetros, não só os de pose.
+- Pipeline de re-geração: extração (serializa árvore p/ JSON) → gerador local → verificação por regressão → `write_biomodel_source`. Scripts temporários removidos; recriáveis a partir deste registro.
+
+### Refatoração + organização visual — CONCLUÍDA (2026-06-12, noite)
+
+Árvore `Biomodelo` otimizada e organizada, **salva** em `testeAgenteBlender1.blend`. Snapshot pré-refatoração: `runtime/snapshots/param_v1_20260612/param_v1_validada.blend`. Regressão verificada a cada patch: malha avaliada idêntica em 4 poses (atual/zeros/fechada/espalmada, desvio ≤ 5e-5).
+
+1. **Node group `FK_Cadeia_Dedo`** (46 nós internos): as cadeias gêmeas F1/F2 (38 nós cada + 12 feeders) viraram **2 instâncias** de um grupo único. Inputs: Ponta MC, Comp Prox/Media/Dist, Flex Prox/Media/Dist (graus), Abducao (graus), Direcao Abd (−1 radial / +1 ulnar). Outputs: 3 matrizes (`Matriz Prox/Media/Dist`) → `Transform Geometry` modo Matrix. Editar a cinemática do dedo = editar o grupo uma vez.
+2. **Dedup de Math**: 8 nós DIVIDE idênticos fundidos (`Math.003`→`Math`; `Math.033–045`→`Math.031`).
+3. **Total**: 219 → **133 nós / 183 links** na árvore principal (+ grupo 46/57). Zero nós soltos, zero links inválidos.
+4. **Layout**: 12 frames em grade global 3 fileiras (Entradas→Cálculos→Antebraço→Punho→Montagem / Metacarpos→FK Dedos→Dedo 1→Dedo 2 / FK Polegar→Polegar Primitivas→Rotações Polegar). Re-grade interna por profundidade de dependência. **GI locais por frame** (`GI_F0xx`, `GI_FK_*`, sockets não usados ocultos) eliminaram os 35 fios longos (>2500px). Frames novos: `Frame_FK_Dedos`, `Frame_FK_Polegar`. Labels renomeados: `Dedo 1 (radial)` / `Dedo 2 (ulnar)`.
+5. **Aprendizado de API**: posição de nó filho de frame é renormalizada pelo Blender no redraw — para layout programático, desparentar → coordenadas absolutas → mover → reparentar com frame em (0,0).
+6. Fusões de Transform sequenciais (punho/CMC polegar) avaliadas e **descartadas** — trocariam 1 nó por 3.
+
+### Polegar FK + abdução dos dedos — CONCLUÍDA (2026-06-12, tarde)
+
+Parametrização v1 do biomodelo **completa**. Árvore `Biomodelo`: **219 nós / 281 links / 0 inválidos**, **41 parâmetros**. `.blend` ainda não salvo após esta sessão (marco de snapshot pendente).
+
+1. **Polegar migrado para FK matricial** (26 nós `FK_TH_*`): `ctBase` (frame do metacarpo, T=(27.1,−85.25,0), Rz=0.473) → junta MCP → junta IP, flexão em **eixo Z** (plano da palma; dedos longos usam X). `TF_Polegar1/2/3` em modo Matrix. Offsets de cubo **derivados dos comprimentos** (sockets 33/40/43) — paramétrico, não constante. Sinal negado na entrada (`FK_TH_negFlexProx/Dist`) para manter positivo = fechar; isso **inverteu a direção** dos sliders 38/39 vs comportamento antigo. Validado: cluster do cubo distal bate com a previsão analítica da cadeia (erro 0.0).
+2. **Abdução dos dedos longos** (12 nós `FK_F1/F2_abd*` + sockets `Abdução Dedo 1` = `Socket_76`, `Abdução Dedo 2` = `Socket_77`, graus, range −15..45, positivo = abrir): `M0 = T(j0)·Rz(abd)·Rx(flex)`. A "escada" de offsets X dos cubos (F1: −14.6/−29.8/−47.3; F2: 8.2/16.6/17.0) foi **zerada** — o leque agora é rotação real na junta (cubos angulados na direção do dedo, como o scan espalmado). Defaults 28.6°/10° reproduzem o leque antigo. Pivô do leque: `j0` em X=0 (centro da palma, como na sintonia original).
+3. `source_template.py` atualizado com os 2 novos parâmetros (41 canônicos).
+
 ### Consolidação + limpeza — CONCLUÍDA (2026-06-12)
 
 `Biomodelo` é agora a **árvore canônica** (181 nós / 235 links / 0 links inválidos), salva em `testeAgenteBlender1.blend`. É um **biomodelo puro** — sem nenhum nó de órtese. Detalhes em `docs/CONSOLIDATION_2026-06-12.md`.
@@ -118,8 +146,8 @@ O que mudou:
 - `Biomodelo_BACKUP_20260612T034627Z` (145 nós, fake_user) — árvore pré-consolidação. Backup em disco: `runtime/snapshots/consolidation_20260612T034627Z/pre_consolidation.blend`.
 
 **Pendências conhecidas:**
-- Polegar em `Biomodelo` ainda usa o modelo antigo (não-matricial) — candidato à mesma migração FK.
-- Offset de centro do cubo no FK é constante — re-parametrizar se comprimentos de falange mudarem muito.
+- ~~Polegar em `Biomodelo` no modelo antigo~~ — resolvido (sessão 2026-06-12 tarde, FK matricial `FK_TH_*`).
+- Offset Y de centro do cubo nos dedos longos (`FK_F1/F2_offv*`) ainda vem de `negHalf*` ligado aos comprimentos — OK; a posição da base (`Math.006`/PontaMC) segue constante em X=0.
 - Órtese: reconstruir do zero ligada a âncoras do biomodelo, partindo das curvas Bezier de `Geometry Nodes` (não reaproveitar o protótipo de calha descartado).
 
 ### Fase 0: ciclo mínimo de pilotagem — CONCLUÍDO (2026-06-10)

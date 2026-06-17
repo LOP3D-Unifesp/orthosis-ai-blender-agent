@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Orthosis Bridge",
     "author": "VB Orthosis Project",
-    "version": (0, 4, 0),
+    "version": (0, 5, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > Orthosis",
     "description": "TCP bridge for incremental GN authoring via Claude Code (port 65432)",

@@ -27,6 +27,7 @@ from .reads import (
     handle_get_node_context,
     handle_get_selected_nodes_context,
     handle_list_tree_nodes,
+    handle_trace_subgraph,
 )
 from .snapshots import handle_capture_full, handle_capture_node_trees, handle_capture_scene
 from .validation_tools import (
@@ -90,6 +91,31 @@ def execute_in_main_thread(func):
     return result["data"]
 
 
+def handle_reload_addon(cmd: dict) -> dict:
+    """Hot-reload the bridge tool modules so deployed code changes take effect.
+
+    Re-imports the tools submodules and rebuilds the live ``HANDLERS`` dict
+    **in place** (so ``server.py``'s reference stays valid), without restarting
+    the socket or dropping the connection. Lets a session pick up newly deployed
+    handlers without a manual Blender restart. Best-effort: returns the error if
+    any module fails to reload, leaving the previous handlers intact.
+    """
+    import importlib
+
+    try:
+        from . import biomodel_source, execution, reads, snapshots, validation_tools
+        for module in (execution, reads, snapshots, biomodel_source, validation_tools):
+            importlib.reload(module)
+        from . import handlers as _self
+        importlib.reload(_self)
+        from .. import server
+        server.HANDLERS.clear()
+        server.HANDLERS.update(_self.HANDLERS)
+        return {"status": "success", "result": {"handler_count": len(server.HANDLERS), "handlers": sorted(server.HANDLERS.keys())}}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "traceback": traceback.format_exc()}
+
+
 HANDLERS = {
     # Scene / tree inspection
     "capture_scene": handle_capture_scene,
@@ -98,12 +124,15 @@ HANDLERS = {
     # Node reads
     "list_tree_nodes": handle_list_tree_nodes,
     "find_tree_nodes": handle_find_tree_nodes,
+    "trace_subgraph": handle_trace_subgraph,
     "get_node_context": handle_get_node_context,
     "get_selected_nodes_context": handle_get_selected_nodes_context,
     "get_active_frame_context": handle_get_active_frame_context,
     "get_local_subgraph_context": handle_get_local_subgraph_context,
     # Execution
     "execute_code": handle_execute_code,
+    # Addon lifecycle
+    "reload_addon": handle_reload_addon,
     # Validation + typed mutations
     "evaluate_geometry": handle_evaluate_geometry,
     "render_viewport": handle_render_viewport,

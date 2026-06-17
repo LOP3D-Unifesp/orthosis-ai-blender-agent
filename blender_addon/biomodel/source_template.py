@@ -10,59 +10,94 @@ GENERATED_TREE_NAME = "VB_Biomodel_Generated"
 SOURCE_TEMPLATE_VERSION = "0.1.0"
 
 
+# Contrato reconciliado 2026-06-16 com a arvore viva `Biomodelo` (63 sockets, 4 dedos
+# individuais + sistema MCP; inclui ajuste lateral MCP por dedo, Socket_118-122). Fonte de verdade canonica: presets/biomodel_sockets_live.json.
+# Defaults = valores vivos no momento da reconciliacao (estado do modelo, NAO medidas reais).
+# Campo 'region' = painel da interface. NOTA: o derivador antropometrico (anthropometry.py)
+# ainda mapeia o contrato antigo de 2 cadeias; reconciliar a DERIVACAO e trabalho de calibracao
+# (PARADA). Ver docs/SOCKET_CONTRACT_RECONCILE_2026-06-16.md.
 PARAMETERS: tuple[tuple[str, str, float, str], ...] = (
-    ("Comp Antebraço", "Socket_21", 223.8100128173828, "forearm_length"),
-    ("Raio Cotovelo", "Socket_22", 37.29999923706055, "elbow_radius"),
-    ("Raio Punho", "Socket_23", 24.799999237060547, "wrist_radius"),
-    ("Desvio Rad/Ulnar Punho", "Socket_24", -2.6000001430511475, "wrist_radial_ulnar_deviation"),
-    ("Flex/Ext Punho", "Socket_25", 0.0, "wrist_flexion_extension"),
-    ("Curva Palma Metacarpo 1", "Socket_27", 0.0, "palm_curve_1"),
-    ("Curva Palma Metacarpo 2", "Socket_28", 0.0, "palm_curve_2"),
-    ("Comp Metacarpo", "Socket_29", 95.27001953125, "metacarpal_length"),
-    ("Largura Metacarpo", "Socket_30", 30.829992294311523, "metacarpal_width"),
-    ("Espessura Metacarpo", "Socket_31", 35.62999725341797, "metacarpal_thickness"),
-    ("Comp Metacarpo Polegar", "Socket_33", 0.0, "thumb_metacarpal_length"),
-    ("Largura Metacarpo Polegar", "Socket_34", 0.0, "thumb_metacarpal_width"),
-    ("Espessura Metacarpo Polegar", "Socket_35", 0.0, "thumb_metacarpal_thickness"),
-    ("Flex/Ext Polegar", "Socket_36", 3.5899999141693115, "thumb_flexion_extension"),
-    ("Abdução Polegar", "Socket_37", 15.0, "thumb_abduction"),
-    ("Flex/Ext Falange Prox Polegar", "Socket_38", 0.0, "thumb_proximal_flexion_extension"),
-    ("Flex/Ext Falange Dist Polegar", "Socket_39", 0.0, "thumb_distal_flexion_extension"),
-    ("Comp Falange Prox Polegar", "Socket_40", 0.0, "thumb_proximal_length"),
-    ("Espessura Falange Prox Polegar", "Socket_42", 0.0, "thumb_proximal_thickness"),
-    ("Comp Falange Dist Polegar", "Socket_43", 0.0, "thumb_distal_length"),
-    ("Espessura Falange Dist Polegar", "Socket_45", 0.0, "thumb_distal_thickness"),
-    ("Abdução Dedo 1", "Socket_76", 28.6, "finger_1_abduction"),
-    ("Flex/Ext Falange Prox 1", "Socket_47", 0.0, "finger_1_proximal_flexion_extension"),
-    ("Flex/Ext Falange Media 1", "Socket_48", 0.0, "finger_1_middle_flexion_extension"),
-    ("Flex/Ext Falange Dist 1", "Socket_49", 0.0, "finger_1_distal_flexion_extension"),
-    ("Comp Falange Prox 1", "Socket_50", 0.0, "finger_1_proximal_length"),
-    ("Espessura Falange Prox 1", "Socket_52", 0.0, "finger_1_proximal_thickness"),
-    ("Comp Falange Media 1", "Socket_53", 0.0, "finger_1_middle_length"),
-    ("Espessura Falange Media 1", "Socket_55", 0.0, "finger_1_middle_thickness"),
-    ("Comp Falange Dist 1", "Socket_56", 0.0, "finger_1_distal_length"),
-    ("Espessura Falange Dist 1", "Socket_58", 0.0, "finger_1_distal_thickness"),
-    ("Abdução Dedo 2", "Socket_77", 10.0, "finger_2_abduction"),
-    ("Flex/Ext Falange Prox 2", "Socket_60", 0.0, "finger_2_proximal_flexion_extension"),
-    ("Flex/Ext Falange Media 2", "Socket_61", 0.0, "finger_2_middle_flexion_extension"),
-    ("Flex/Ext Falange Dist 2", "Socket_62", 0.0, "finger_2_distal_flexion_extension"),
-    ("Comp Falange Prox 2", "Socket_63", 0.0, "finger_2_proximal_length"),
-    ("Espessura Falange Prox 2", "Socket_65", 0.0, "finger_2_proximal_thickness"),
-    ("Comp Falange Media 2", "Socket_66", 0.0, "finger_2_middle_length"),
-    ("Espessura Falange Media 2", "Socket_68", 0.0, "finger_2_middle_thickness"),
-    ("Comp Falange Dist 2", "Socket_69", 0.0, "finger_2_distal_length"),
-    ("Espessura Falange Dist 2", "Socket_71", 0.0, "finger_2_distal_thickness"),
+    # --- Geral ---
+    ('Largura Dedo', 'Socket_80', 17.25, 'width_finger'),
+    # --- Medidas (tamanho) ---
+    ('Comp Antebraço', 'Socket_21', 270.35, 'length_forearm'),
+    ('Perímetro Cotovelo', 'Socket_22', 234.3628, 'perimeter_elbow'),
+    ('Perímetro Punho', 'Socket_23', 139.0, 'perimeter_wrist'),
+    ('Comp Metacarpo', 'Socket_29', 90.42, 'length_metacarpal'),
+    ('Largura Metacarpo', 'Socket_30', 84.28, 'width_metacarpal'),
+    ('Espessura da Palma', 'Socket_31', 29.56, 'thickness_da_palm'),
+    ('Comp Metacarpo Polegar', 'Socket_33', 60.73, 'length_metacarpal_thumb'),
+    ('Comp Falange Prox Polegar', 'Socket_40', 27.8, 'length_phalange_prox_thumb'),
+    ('Comp Falange Dist Polegar', 'Socket_43', 20.53, 'length_phalange_dist_thumb'),
+    # --- Movimento (pose) ---
+    ('Desvio Rad/Ulnar Punho', 'Socket_24', -5.38, 'deviation_radial_ulnar_wrist'),
+    ('Flex/Ext Punho', 'Socket_25', 0.0, 'flexion_wrist'),
+    ('Curva Palma Metacarpo 1', 'Socket_27', 0.0, 'curve_palm_metacarpal_1'),
+    ('Curva Palma Metacarpo 2', 'Socket_28', 0.0, 'curve_palm_metacarpal_2'),
+    ('Flex/Ext Polegar', 'Socket_36', 6.2, 'flexion_thumb'),
+    ('Abdução Polegar', 'Socket_37', 11.82, 'abduction_thumb'),
+    ('Flex/Ext Falange Prox Polegar', 'Socket_38', 3.77, 'flexion_phalange_prox_thumb'),
+    ('Flex/Ext Falange Dist Polegar', 'Socket_39', -19.0, 'flexion_phalange_dist_thumb'),
+    # --- Dedos - Abduções ---
+    ('Dedos - Abdução geral', 'Socket_99', 0.0, 'fingers_abduction_general'),
+    ('Indicador - Abdução', 'Socket_76', -12.35, 'index_abduction'),
+    ('Médio - Abdução', 'Socket_87', 0.16, 'middle_abduction'),
+    ('Anelar - Abdução', 'Socket_77', -18.8, 'ring_abduction'),
+    ('Mindinho - Abdução', 'Socket_88', -34.63, 'pinky_abduction'),
+    # --- Dedos - Comprimentos ---
+    ('Indicador - Comp. falange proximal', 'Socket_50', 20.76, 'index_length_phalange_proximal'),
+    ('Indicador - Comp. falange média', 'Socket_53', 18.96, 'index_length_phalange_middle'),
+    ('Indicador - Comp. falange distal', 'Socket_56', 25.15, 'index_length_phalange_distal'),
+    ('Médio - Comp. falange proximal', 'Socket_81', 25.61, 'middle_length_phalange_proximal'),
+    ('Médio - Comp. falange média', 'Socket_82', 25.4, 'middle_length_phalange_middle'),
+    ('Médio - Comp. falange distal', 'Socket_83', 27.66, 'middle_length_phalange_distal'),
+    ('Anelar - Comp. falange proximal', 'Socket_63', 22.38, 'ring_length_phalange_proximal'),
+    ('Anelar - Comp. falange média', 'Socket_66', 25.79, 'ring_length_phalange_middle'),
+    ('Anelar - Comp. falange distal', 'Socket_69', 23.61, 'ring_length_phalange_distal'),
+    ('Mindinho - Comp. falange proximal', 'Socket_84', 18.36, 'pinky_length_phalange_proximal'),
+    ('Mindinho - Comp. falange média', 'Socket_85', 21.48, 'pinky_length_phalange_middle'),
+    ('Mindinho - Comp. falange distal', 'Socket_86', 20.3, 'pinky_length_phalange_distal'),
+    # --- Dedos - Movimento ---
+    ('Dedos - Flex/Ext proximal geral', 'Socket_100', 0.0, 'fingers_flexion_proximal_general'),
+    ('Dedos - Flex/Ext média geral', 'Socket_101', 0.0, 'fingers_flexion_middle_general'),
+    ('Dedos - Flex/Ext distal geral', 'Socket_102', 0.0, 'fingers_flexion_distal_general'),
+    ('Indicador - Flex/Ext proximal', 'Socket_47', 0.0, 'index_flexion_proximal'),
+    ('Indicador - Flex/Ext média', 'Socket_48', 0.0, 'index_flexion_middle'),
+    ('Indicador - Flex/Ext distal', 'Socket_49', 0.0, 'index_flexion_distal'),
+    ('Médio - Flex/Ext proximal', 'Socket_92', 0.0, 'middle_flexion_proximal'),
+    ('Médio - Flex/Ext média', 'Socket_93', 0.0, 'middle_flexion_middle'),
+    ('Médio - Flex/Ext distal', 'Socket_94', 0.0, 'middle_flexion_distal'),
+    ('Anelar - Flex/Ext proximal', 'Socket_60', 0.0, 'ring_flexion_proximal'),
+    ('Anelar - Flex/Ext média', 'Socket_61', 0.0, 'ring_flexion_middle'),
+    ('Anelar - Flex/Ext distal', 'Socket_62', 0.0, 'ring_flexion_distal'),
+    ('Mindinho - Flex/Ext proximal', 'Socket_95', 0.0, 'pinky_flexion_proximal'),
+    ('Mindinho - Flex/Ext média', 'Socket_96', 0.0, 'pinky_flexion_middle'),
+    ('Mindinho - Flex/Ext distal', 'Socket_97', 0.0, 'pinky_flexion_distal'),
+    # --- Dedos - MCP / Pivôs ---
+    ('Dedos - Avanço MCP geral', 'Socket_110', 8.54, 'fingers_advance_mcp_general'),
+    ('Dedos - Curvatura arco MCP', 'Socket_111', 0.32, 'fingers_curvature_arch_mcp'),
+    ('Indicador - Avanço MCP', 'Socket_112', 3.24, 'index_advance_mcp'),
+    ('Médio - Avanço MCP', 'Socket_113', 0.19, 'middle_advance_mcp'),
+    ('Anelar - Avanço MCP', 'Socket_114', 0.23, 'ring_advance_mcp'),
+    ('Mindinho - Avanço MCP', 'Socket_115', -1.37, 'pinky_advance_mcp'),
+    ('Dedos - Lateral MCP geral', 'Socket_118', 0.0, 'fingers_lateral_mcp_general'),
+    ('Indicador - Lateral MCP', 'Socket_119', 0.0, 'index_lateral_mcp'),
+    ('Médio - Lateral MCP', 'Socket_120', 0.0, 'middle_lateral_mcp'),
+    ('Anelar - Lateral MCP', 'Socket_121', 0.0, 'ring_lateral_mcp'),
+    ('Mindinho - Lateral MCP', 'Socket_122', 0.0, 'pinky_lateral_mcp'),
+    ('MCP - Visual coroa', 'Socket_116', 0.58, 'mcp_visual_crown'),
+    ('MCP - Raio cabeças', 'Socket_117', 9.6, 'mcp_radius_heads'),
 )
 
 
 REGIONS: tuple[tuple[str, str], ...] = (
-    ("REGION_FOREARM", "Antebraço"),
-    ("REGION_THUMB_SEGMENTS", "Polegar"),
-    ("REGION_THUMB_POSE", "Flex/Ext e Abd Polegar"),
-    ("REGION_WRIST_POSE", "Desvio e Ext/Flex Punho"),
-    ("REGION_FINGER_CHAIN_1", "Falanges1"),
-    ("REGION_FINGER_CHAIN_2", "Falanges 2"),
-    ("REGION_METACARPALS", "Metacarpos"),
+    ('PANEL_GENERAL', 'Geral'),
+    ('PANEL_MEDIDAS_TAMANHO', 'Medidas (tamanho)'),
+    ('PANEL_MOVIMENTO_POSE', 'Movimento (pose)'),
+    ('PANEL_FINGERS_ABDUES', 'Dedos - Abduções'),
+    ('PANEL_FINGERS_COMPRIMENTOS', 'Dedos - Comprimentos'),
+    ('PANEL_FINGERS_MOVIMENTO', 'Dedos - Movimento'),
+    ('PANEL_FINGERS_MCP_PIVS', 'Dedos - MCP / Pivôs'),
 )
 
 
@@ -186,8 +221,10 @@ def build_biomodel_source_template() -> str:
             transform = new_node(tree, "GeometryNodeTransform", "XFORM_Forearm", "Forearm transform", (-440, 360), frame)
 
             set_default(socket_by_name(cone.inputs, "Vertices"), 48)
-            link(tree, input_socket(group_input, "Raio Cotovelo"), socket_by_name(cone.inputs, "Radius Top"))
-            link(tree, input_socket(group_input, "Raio Punho"), socket_by_name(cone.inputs, "Radius Bottom"))
+            # NOTE: protótipo mínimo — usa o perímetro direto como raio (sem ÷2π).
+            # A árvore canônica `Biomodelo` é que faz a conversão perímetro→raio.
+            link(tree, input_socket(group_input, "Perímetro Cotovelo"), socket_by_name(cone.inputs, "Radius Top"))
+            link(tree, input_socket(group_input, "Perímetro Punho"), socket_by_name(cone.inputs, "Radius Bottom"))
             link(tree, input_socket(group_input, "Comp Antebraço"), socket_by_name(cone.inputs, "Depth"))
             link(tree, socket_by_name(cone.outputs, "Mesh", "Geometry"), socket_by_name(transform.inputs, "Geometry"))
             return transform
@@ -200,7 +237,7 @@ def build_biomodel_source_template() -> str:
 
             set_default(socket_by_name(sphere.inputs, "Segments"), 32)
             set_default(socket_by_name(sphere.inputs, "Rings"), 16)
-            link(tree, input_socket(group_input, "Raio Punho"), socket_by_name(sphere.inputs, "Radius"))
+            link(tree, input_socket(group_input, "Perímetro Punho"), socket_by_name(sphere.inputs, "Radius"))
             set_default(socket_by_name(transform.inputs, "Translation"), (0.0, -120.0, 0.0))
             link(tree, socket_by_name(sphere.outputs, "Mesh", "Geometry"), socket_by_name(transform.inputs, "Geometry"))
             return transform
@@ -215,7 +252,7 @@ def build_biomodel_source_template() -> str:
             set_default(socket_by_name(cube.inputs, "Size"), 1.0)
             link(tree, input_socket(group_input, "Largura Metacarpo"), socket_by_name(scale.inputs, "X"))
             link(tree, input_socket(group_input, "Comp Metacarpo"), socket_by_name(scale.inputs, "Y"))
-            link(tree, input_socket(group_input, "Espessura Metacarpo"), socket_by_name(scale.inputs, "Z"))
+            link(tree, input_socket(group_input, "Espessura da Palma"), socket_by_name(scale.inputs, "Z"))
             set_default(socket_by_name(transform.inputs, "Translation"), (0.0, -210.0, 0.0))
             link(tree, socket_by_name(cube.outputs, "Mesh", "Geometry"), socket_by_name(transform.inputs, "Geometry"))
             link(tree, socket_by_name(scale.outputs, "Vector"), socket_by_name(transform.inputs, "Scale"))

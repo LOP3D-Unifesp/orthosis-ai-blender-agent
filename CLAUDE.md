@@ -52,11 +52,13 @@ O painel de chat embarcado no Blender está arquivado em `legacy/` — não é p
 | `get_node_context(tree_name, node_name, radius=1)` | inspeção focal: nó + vizinhança |
 | `get_selected_nodes_context(tree_name)` | contexto dos nós selecionados |
 | `get_active_frame_context(tree_name, frame_name)` | contexto de um frame |
-| `execute_code(code)` | executa script Python no Blender (agora retorna `stdout`+`stderr`; opcional var `result` → JSON) |
+| `trace_subgraph(tree_name, seeds, depth=4, direction='back')` | **cone de dependência** com `operation` + índice de socket dos links + defaults (reconstrói fórmulas) |
+| `execute_code(code, undo_push=False)` | executa script Python no Blender (retorna `stdout`+`stderr`; var `result` → JSON; `undo_push` registra no undo) |
 | `capture_node_trees()` | snapshot de todas as árvores GN |
-| `evaluate_geometry(object, sample=N)` | malha avaliada: vcount, bbox, amostras (validação numérica) |
-| `render_viewport(object, view='iso')` | render Workbench → PNG (validação visual; views: top/front/side/iso) |
-| `set_param(object, identifier, value)` | seta input do modifier GN por identifier |
+| `evaluate_geometry(object, sample, region=, diff=, clusters=)` | malha avaliada: bbox, **filtro de região**, **diff entre 2 poses**, **clusters por eixo** (mede escada num call) |
+| `render_viewport(object, view, focus=, overlay=, xray=, resolution_x/y=, params=)` | render Workbench → PNG: **foco em região**, **overlay do scan (x-ray)**, pose transitória |
+| `reload_addon()` | hot-reload dos módulos de tools (sem restart) após deploy |
+| `set_param(object, identifier, value)` | seta input do modifier GN por identifier (com undo_push) |
 | `resolve_node(tree, ref)` | resolve nó por **label** ou nome (evita depender de `node.name`) |
 | `set_node_input(tree, node, socket, value)` | seta default de socket não-ligado |
 | `link_sockets(tree, from_node, from_socket, to_node, to_socket)` | cria link tipado |
@@ -66,7 +68,7 @@ O painel de chat embarcado no Blender está arquivado em `legacy/` — não é p
 | `validate_biomodel_source(code)` | valida invariantes sem executar |
 | `seed_biomodel_source()` | semente o template fase-1 no Text Editor |
 
-> Os handlers de validação/mutação (`evaluate_geometry`, `render_viewport`, `set_param`, `resolve_node`, `set_node_input`, `link_sockets`, `add_node`) foram adicionados em 2026-06-12 (`blender_addon/tools/validation_tools.py`). **Ativam no próximo restart do Blender** — o addon não recarrega a quente. Na sessão atual o mesmo efeito é obtido via `execute_code`.
+> **2026-06-16:** os handlers de validação/render/mutação estão **ativos** (addon recarregado). `render_viewport` e `evaluate_geometry` foram melhorados (foco/overlay/x-ray; região/diff/clusters), `trace_subgraph` e `reload_addon` foram adicionados, e os handlers de mutação fazem `undo_push`. Detalhes em `docs/BRIDGE_TOOLING_REVIEW_2026-06-16.md`. Deploy = copiar `blender_addon/tools/*.py` p/ `%APPDATA%\...\addons\blender_addon\tools` → `reload_addon()`.
 
 **Ponto de entrada Python:** `BlenderConnection` em `blender_connection.py`.
 
@@ -100,6 +102,77 @@ conn.execute_code("import bpy; print('ok')")               # patch
 ## Estado atual da parametrização
 
 > **Atualizar esta seção após cada sessão.**
+
+### Reorganização visual + subgrupos da árvore — CONCLUÍDA (2026-06-16)
+
+A árvore tinha ficado ilegível; reorganizada e enxugada. Detalhes em
+`docs/NODE_TREE_REFACTOR_2026-06-16.md`. Snapshot final `runtime/snapshots/polish_done_*`.
+Usuário salvou como `biomodelov2.blend` (após a extração do MCP; os polimentos depois disso ficaram
+por salvar de novo).
+
+- **Group Input localizado:** o GI global (79 fios cross-frame) virou **cópias locais por frame**
+  (sockets não usados ocultos) → cross-frame de GI **88→0**, comprimento de fios **−77%**.
+- **Subgrupo `MCP_Cabeca_Dedo`:** frame MCP (71 nós) → **4 instâncias** + comuns. 14 inputs (4
+  constantes por-dedo promovidas: arco/X/curvatura/coroaY). Verificado vértice-a-vértice (7/1746
+  diferem ≤0.1 mm = float). **Gotcha:** `group_make` não promove constantes internas, e não propaga
+  default de interface a instâncias existentes (Indicador ficou 0.0 → corrigido).
+- **Subgrupo `Polegar_FK`:** frame FK Polegar (32 nós) → **1 instância** (fingerprint idêntico).
+- **Subgrupo `Dedo_Falanges`:** a geometria de falange dos 4 dedos → **4 instâncias** (10 inputs:
+  Largura + Comp/Esp/Matriz × prox/média/distal). Exigiu **modernizar Indicador+Anelar** (estilo
+  legado das 2-cadeias) pro estilo novo: o tracer captura as fontes reais (largura do slider p/
+  Indicador, fixa p/ os outros; Z=Espessura×ratio; matrizes do FK) → instância. Fingerprint
+  idêntico nos 4. Depois um sweep de nós-mortos tirou 16 resquícios (`AlignVec_*`, `BaseVec_*`,
+  `BaseXr_*`, `FingersCenterX`, `Math.031/036-046`). Posicionamento dos dedos é via FK `Base X`
+  (os transforms `Pos`/`Centra dedos` eram identidade).
+- **Layout:** engine `runtime/relayout_biomodel.py` (grade 3-fileiras por fluxo + barycenter pra
+  reduzir cruzamentos); cores por fileira; polegar puxado pra fileira do meio.
+- **Total: 277 → 138 nós.** Grupos: `FK_Cadeia_Dedo`, `MCP_Cabeca_Dedo`, `Polegar_FK`,
+  `Dedo_Falanges` (todos com 4 instâncias, exceto Polegar=1). Geometria intacta (1746 verts) em
+  todas as etapas. Snapshot final `runtime/snapshots/dedo_falanges_done_*`. **`.blend` por re-salvar**
+  (v2 foi salvo antes destas extrações).
+
+### Ajuste lateral (X) dos pivôs MCP por dedo — CONCLUÍDA (2026-06-16)
+
+Família de controle gêmea do `Avanço MCP`, mas no eixo **lateral (X)**: ajuste fino por dedo de
+quão "para dentro/fora" cada cabeça/elipse MCP (e o dedo ancorado nela) fica. Detalhes em
+`docs/MCP_LATERAL_CONTROL_2026-06-16.md`.
+
+- **Onde entra:** o lateral soma em `MCP_X_Final_<dedo>`, que já alimenta **esfera** (`MCP_Pos.X`)
+  **e** base do dedo no FK (`Base X`) da mesma fonte → move a articulação no mundo (anti-escada);
+  X é o eixo da flexão → **imune à flexão** (dz=0). 8 nós novos (`MCP_Lateral_*` + `MCP_X_AjusteLat_*`).
+- **Sockets novos (58→63):** `Dedos - Lateral MCP geral` (Socket_118) + por-dedo
+  Indicador/Médio/Anelar/Mindinho (Socket_119–122), painel *Dedos - MCP / Pivôs*, range −40..40,
+  default 0. Positivo = lado radial/polegar. `source_template.py` + `presets/biomodel_sockets_live.json`
+  atualizados (63 sockets).
+- **Verificado por medição:** zero-regressão a 0; offset por dedo move exatamente 290 verts (geral =
+  4×290); slider −15 → translação rígida de módulo **15.000 mm**, **dz=0**, idêntica a 90° de flexão.
+- **Gotcha:** comparar nós bpy com `==`/`.name`, nunca `is` (wrappers novos a cada acesso geraram um
+  self-loop no 1º patch). Painel real chama-se `Dedos - MCP / Piv?s` (typo `?`); há um painel vazio
+  homônimo com `ô` — limpeza opcional.
+
+### Cinemática MCP dos dedos longos + ancoragem nas esferas — CONCLUÍDA (2026-06-16)
+
+Conserto da "escada" de altura na flexão a 90° + dedos partindo da borda das esferas MCP.
+Detalhes completos em `docs/MCP_FINGER_KINEMATICS_2026-06-16.md`. Snapshot:
+`runtime/snapshots/mcp_finger_kinematics_20260616/biomodel_mcp_fixed.blend`.
+
+- **Causa-raiz:** o offset por-dedo era aplicado no referencial **local que gira com a flexão** →
+  a 90° virava deslocamento vertical, e como diferia por dedo, gerava escada. **Invariante nova:**
+  posição por-dedo move a **articulação no mundo** (pivô/esfera, que não gira); só **folga uniforme**
+  pode viver no referencial local do dedo.
+- **Arquitetura:** pivô = esfera = base da falange, todos em `MCP_Guide_Ponta + MCP_Avanco_Total`
+  (arco anatômico: Médio mais avançado). Nova entrada **`Base X`** no grupo `FK_Cadeia_Dedo` coloca
+  o dedo no X da esfera; translações pós-FK (`TF_CenterFingers_*`, `Pos_D3/D5`) zeradas. Folga
+  base↔esfera **uniforme e paramétrica** = raio da esfera (`Punho_raio×0.432`) + 2.5 mm (`FK_GapEdge`).
+- **Removidos:** sliders `Dedos - Offset MCP` (geral + 4 por-dedo, Socket_104–108) e nós
+  `MCP_Offset_Efetivo_*` — eram a causa da escada. Demais sockets mantiveram seus identifiers.
+- **Controles agora:** longitudinal global = `Comp Metacarpo`; avanço/arco por-dedo = `Avanço MCP`
+  (livre de escada, mexe na articulação); direção = `Abdução`. Verificado: spread das pontas a 90°
+  = **0.0 mm**, e imune a ajuste por-dedo (mindinho +15 mm → spread continua 0.0).
+- **Aprendizado de backend:** os handlers de validação/render do repo **não estavam ativos** no
+  Blender ligado (addon stale); tive que reimplementar render/medição via `execute_code`
+  (`runtime/inspect/`). Revisão e plano em `docs/BRIDGE_TOOLING_REVIEW_2026-06-16.md`. Undo do
+  usuário reverteu edições do bridge algumas vezes — **salvar após marcos** é crítico.
 
 ### Fase 3 — consolidação no GN_Biomodel_Source — CONCLUÍDA (2026-06-12)
 

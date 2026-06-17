@@ -134,19 +134,70 @@ class BlenderConnection:
             "radius": radius,
         })
 
-    def execute_code(self, code: str) -> dict:
-        return self.send_command({"type": "execute_code", "code": code})
+    def execute_code(self, code: str, *, undo_push: bool = False) -> dict:
+        return self.send_command({"type": "execute_code", "code": code, "undo_push": undo_push})
+
+    def reload_addon(self) -> dict:
+        """Hot-reload the bridge tool modules (after a deploy) without restart."""
+        return self.send_command({"type": "reload_addon"})
+
+    def trace_subgraph(self, tree_name: str, seeds, *, depth: int = 4, direction: str = "back") -> dict:
+        """Walk the dependency cone of seed node(s) with full formula detail
+        (math operation + every link's socket index on both ends + defaults)."""
+        if isinstance(seeds, str):
+            seeds = [seeds]
+        return self.send_command({
+            "type": "trace_subgraph", "tree_name": tree_name,
+            "seeds": seeds, "depth": depth, "direction": direction,
+        })
 
     # ----- Validation + typed mutations -----
 
-    def evaluate_geometry(self, obj: str, *, sample: int = 0) -> dict:
-        return self.send_command({"type": "evaluate_geometry", "object": obj, "sample": sample})
+    def evaluate_geometry(self, obj: str, *, sample: int = 0, region: dict | None = None,
+                          diff: dict | None = None, clusters: dict | None = None) -> dict:
+        cmd: dict = {"type": "evaluate_geometry", "object": obj, "sample": sample}
+        if region:
+            cmd["region"] = region
+        if diff:
+            cmd["diff"] = diff
+        if clusters:
+            cmd["clusters"] = clusters
+        return self.send_command(cmd)
 
-    def render_viewport(self, obj: str, *, view: str = "iso", path: str = "", resolution: int = 640) -> dict:
-        cmd: dict = {"type": "render_viewport", "object": obj, "view": view, "resolution": resolution}
+    def render_viewport(self, obj: str, *, view: str = "iso", path: str = "", resolution: int = 640,
+                        resolution_x: int | None = None, resolution_y: int | None = None,
+                        focus: dict | None = None, overlay=None, xray: bool | None = None,
+                        xray_alpha: float = 0.45, keep=None, params: dict | None = None,
+                        restore: bool = True) -> dict:
+        cmd: dict = {"type": "render_viewport", "object": obj, "view": view, "resolution": resolution,
+                     "xray_alpha": xray_alpha, "restore": restore}
         if path:
             cmd["path"] = path
+        if resolution_x:
+            cmd["resolution_x"] = resolution_x
+        if resolution_y:
+            cmd["resolution_y"] = resolution_y
+        if focus:
+            cmd["focus"] = focus
+        if overlay:
+            cmd["overlay"] = overlay
+        if xray is not None:
+            cmd["xray"] = xray
+        if keep:
+            cmd["keep"] = keep
+        if params:
+            cmd["params"] = params
         return self.send_command(cmd)
+
+    @staticmethod
+    def save_json(obj, path: str) -> str:
+        """Write a result to a UTF-8 JSON file (avoids Windows cp1252 console
+        errors when printing Unicode labels). Returns the path."""
+        import os
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(obj, f, indent=1, ensure_ascii=False)
+        return path
 
     def set_param(self, obj: str, identifier: str, value) -> dict:
         return self.send_command({"type": "set_param", "object": obj, "identifier": identifier, "value": value})

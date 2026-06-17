@@ -33,6 +33,7 @@ def handle_execute_code(cmd: dict) -> dict:
     avoids having to ``print()`` and re-parse data on the client side.
     """
     code = cmd.get("code", "")
+    undo_push = bool(cmd.get("undo_push", False))
 
     def _do():
         import bpy
@@ -43,6 +44,11 @@ def handle_execute_code(cmd: dict) -> dict:
         try:
             with redirect_stdout(out), redirect_stderr(err):
                 exec(code, namespace, namespace)
+            if undo_push:
+                try:
+                    bpy.ops.ed.undo_push(message="bridge execute_code")
+                except Exception:
+                    pass
             response = {
                 "status": "success",
                 "stdout": out.getvalue(),

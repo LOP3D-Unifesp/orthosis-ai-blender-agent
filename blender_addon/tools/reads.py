@@ -20,6 +20,122 @@ def execute_in_main_thread(func):
 # ---------------------------------------------------------------------------
 
 
+def _socket_index(sockets, sock) -> int:
+    """Index of ``sock`` within a node's inputs/outputs collection (-1 if absent)."""
+    try:
+        for i, s in enumerate(sockets):
+            if s == sock:
+                return i
+    except Exception:
+        pass
+    return -1
+
+
+def handle_trace_subgraph(cmd: dict) -> dict:
+    """Walk the dependency cone of seed nodes, with full formula detail.
+
+    Unlike ``get_node_context`` (which only dumps the target's sockets and links
+    by name), this returns, per node: the math ``operation``, and every input/
+    output link with the **socket index** on both ends plus unlinked defaults —
+    everything needed to reconstruct the formula a node computes.
+
+    Inputs:
+      tree_name : str
+      seeds     : str | list[str]  — node names to start from
+      depth     : int  (default 4, clamped 1..12)
+      direction : "back" (upstream, default) | "forward" (downstream) | "both"
+    """
+    tree_name = str(cmd.get("tree_name", "")).strip()
+    seeds = cmd.get("seeds") or cmd.get("seed") or []
+    if isinstance(seeds, str):
+        seeds = [seeds]
+    depth = max(1, min(int(cmd.get("depth", 4) or 4), 12))
+    direction = str(cmd.get("direction", "back")).strip().lower()
+    if direction not in {"back", "forward", "both"}:
+        direction = "back"
+
+    def _do():
+        tree = bpy.data.node_groups.get(tree_name)
+        if tree is None:
+            available = [ng.name for ng in bpy.data.node_groups if ng.bl_idname == "GeometryNodeTree"]
+            return {"status": "error", "error": f"Tree '{tree_name}' not found", "available_trees": available}
+
+        def node_inputs(n):
+            out = []
+            for i, s in enumerate(n.inputs):
+                e = {"i": i, "name": s.name, "type": s.bl_idname}
+                if s.is_linked and s.links:
+                    link = s.links[0]
+                    e["from"] = [link.from_node.name, _socket_index(link.from_node.outputs, link.from_socket), link.from_socket.name]
+                elif hasattr(s, "default_value"):
+                    e["val"] = capture._json_safe_value(s.default_value)
+                out.append(e)
+            return out
+
+        def node_outputs(n):
+            out = []
+            for i, s in enumerate(n.outputs):
+                tgts = []
+                for link in s.links:
+                    tgts.append([link.to_node.name, _socket_index(link.to_node.inputs, link.to_socket), link.to_socket.name])
+                if tgts:
+                    out.append({"i": i, "name": s.name, "to": tgts})
+            return out
+
+        def describe(n):
+            d = {
+                "name": n.name,
+                "label": n.label or "",
+                "type": n.bl_idname,
+                "loc": [round(float(n.location.x), 1), round(float(n.location.y), 1)],
+                "inputs": node_inputs(n),
+                "outputs": node_outputs(n),
+            }
+            if hasattr(n, "operation"):
+                d["operation"] = n.operation
+            if n.bl_idname == "GeometryNodeGroup" and getattr(n, "node_tree", None):
+                d["group"] = n.node_tree.name
+            if getattr(n, "parent", None):
+                d["parent"] = n.parent.name
+            return d
+
+        frontier = [s for s in seeds if tree.nodes.get(s)]
+        if not frontier:
+            return {"status": "error", "error": "no valid seed nodes", "seeds": list(seeds)}
+        seen: dict = {}
+        for _ in range(depth):
+            nxt: list[str] = []
+            for name in frontier:
+                if name in seen:
+                    continue
+                node = tree.nodes.get(name)
+                if node is None:
+                    continue
+                seen[name] = describe(node)
+                if direction in ("back", "both"):
+                    for inp in seen[name]["inputs"]:
+                        if "from" in inp:
+                            nxt.append(inp["from"][0])
+                if direction in ("forward", "both"):
+                    for outp in seen[name]["outputs"]:
+                        for t in outp["to"]:
+                            nxt.append(t[0])
+            frontier = nxt
+
+        return {
+            "status": "success",
+            "result": {
+                "tree_name": tree_name,
+                "direction": direction,
+                "depth": depth,
+                "node_count": len(seen),
+                "nodes": list(seen.values()),
+            },
+        }
+
+    return execute_in_main_thread(_do)
+
+
 def handle_get_node_context(cmd: dict) -> dict:
     """Return local node context for one target node and its neighborhood."""
     tree_name = cmd.get("tree_name", "")
@@ -210,8 +326,10 @@ def _serialize_nodes_and_links(
                     {
                         "from_node": from_node.name,
                         "from_socket": link.from_socket.name,
+                        "from_socket_index": _socket_index(from_node.outputs, link.from_socket),
                         "to_node": to_node.name,
                         "to_socket": link.to_socket.name,
+                        "to_socket_index": _socket_index(to_node.inputs, link.to_socket),
                     }
                 )
         except Exception:
@@ -633,6 +751,7 @@ def handle_find_tree_nodes(cmd: dict) -> dict:
 
 __all__ = [
     "handle_get_tree_inventory",
+    "handle_trace_subgraph",
     "handle_get_node_context",
     "handle_get_selected_nodes_context",
     "handle_get_active_frame_context",

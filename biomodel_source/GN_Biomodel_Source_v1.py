@@ -625,4 +625,15 @@ def build():
     return tree
 
 
-build()
+def instantiate(tree):
+    obj_name = "VB_Biomodel_Generated"
+    mesh = bpy.data.meshes.get(obj_name) or bpy.data.meshes.new(obj_name)
+    obj = bpy.data.objects.get(obj_name) or bpy.data.objects.new(obj_name, mesh)
+    if obj.name not in bpy.context.scene.collection.objects:
+        bpy.context.scene.collection.objects.link(obj)
+    mod = obj.modifiers.get("Biomodelo") or obj.modifiers.new("Biomodelo", "NODES")
+    mod.node_group = tree
+    print("[GN_Biomodel_Source] objeto '%s' na cena com modifier 'Biomodelo'" % obj_name)
+
+
+instantiate(build())

@@ -10,15 +10,24 @@ GENERATED_TREE_NAME = "VB_Biomodel_Generated"
 SOURCE_TEMPLATE_VERSION = "0.1.0"
 
 
-# Contrato reconciliado 2026-06-16 com a arvore viva `Biomodelo` (63 sockets, 4 dedos
-# individuais + sistema MCP; inclui ajuste lateral MCP por dedo, Socket_118-122). Fonte de verdade canonica: presets/biomodel_sockets_live.json.
+# NOTA (2026-07-06): a arvore viva `Biomodelo` esta em 89 sockets (Frente D + polegar + arco Z metacarpos).
+# Este PARAMETERS cobre polegar (146/147/148) e arco Z dos metacarpos (153-157) completos, mas AINDA NAO
+# lista os demais sockets da Frente D (Palma - Largura ossos, Carpo, Metacarpos - Base, Membro esquerdo).
+# A fonte de verdade completa e `presets/biomodel_sockets_live.json` (89 sockets, regenerado 2026-07-06).
+# Contrato atualizado 2026-07-05 com a arvore viva `Biomodelo` (67 sockets). Base: 63 sockets
+# (4 dedos individuais + sistema MCP; ajuste lateral MCP por dedo Socket_118-122). Rebuild do
+# polegar (2026-07-05): +4 sockets de base CMC (Socket_124-127) e recabeamento dos DOFs 36/37/38/39
+# para a cadeia CMC->MCP->IP (grupo Polegar_FK_v2). Fonte de verdade canonica: presets/biomodel_sockets_live.json.
 # Defaults = valores vivos no momento da reconciliacao (estado do modelo, NAO medidas reais).
 # Campo 'region' = painel da interface. NOTA: o derivador antropometrico (anthropometry.py)
 # ainda mapeia o contrato antigo de 2 cadeias; reconciliar a DERIVACAO e trabalho de calibracao
-# (PARADA). Ver docs/SOCKET_CONTRACT_RECONCILE_2026-06-16.md.
+# (PARADA). Ver docs/SOCKET_CONTRACT_RECONCILE_2026-06-16.md e docs/THUMB_REBUILD_2026-07-05.md.
 PARAMETERS: tuple[tuple[str, str, float, str], ...] = (
     # --- Geral ---
     ('Largura Dedo', 'Socket_80', 17.25, 'width_finger'),
+    # Desacople 2026-07-05: multiplica APENAS espessuras de falanges+polegar (EspDedos = Esp×Fator);
+    # palma (ossos, EspProx_Palma) e topo-palma seguem Espessura crua; carpo rebaseado no punho.
+    ('Dedos - Fator espessura', 'Socket_128', 1.0, 'fingers_thickness_factor'),
     # --- Medidas (tamanho) ---
     ('Comp Antebraço', 'Socket_21', 270.35, 'length_forearm'),
     ('Perímetro Cotovelo', 'Socket_22', 234.3628, 'perimeter_elbow'),
@@ -34,10 +43,22 @@ PARAMETERS: tuple[tuple[str, str, float, str], ...] = (
     ('Flex/Ext Punho', 'Socket_25', 0.0, 'flexion_wrist'),
     ('Curva Palma Metacarpo 1', 'Socket_27', 0.0, 'curve_palm_metacarpal_1'),
     ('Curva Palma Metacarpo 2', 'Socket_28', 0.0, 'curve_palm_metacarpal_2'),
+    # DOFs da junta CMC (rebuild 2026-07-05): 36/37 = flexao/abducao da CMC; 38/39 = flexao MCP/IP.
     ('Flex/Ext Polegar', 'Socket_36', 6.2, 'flexion_thumb'),
     ('Abdução Polegar', 'Socket_37', 11.82, 'abduction_thumb'),
     ('Flex/Ext Falange Prox Polegar', 'Socket_38', 3.77, 'flexion_phalange_prox_thumb'),
     ('Flex/Ext Falange Dist Polegar', 'Socket_39', -19.0, 'flexion_phalange_dist_thumb'),
+    # Angulo palmar por falange (2026-07-06): Rz no MCP/IP dentro do grupo Polegar_FK_v2
+    # (mesmo movimento do 'Angulo palmar' base, mas por junta). Positivo = mesma direcao da base.
+    ('Polegar - Palmar falange prox', 'Socket_146', 0.0, 'thumb_palmar_prox'),
+    ('Polegar - Palmar falange dist', 'Socket_147', 0.0, 'thumb_palmar_dist'),
+    # --- Polegar - CMC (base anatomica, rebuild 2026-07-05) ---
+    ('Polegar - Ângulo palmar', 'Socket_124', 27.0, 'thumb_palmar_angle'),
+    ('Polegar - Oposição', 'Socket_125', 10.0, 'thumb_opposition'),
+    ('Polegar - CMC recuo', 'Socket_126', 0.0, 'thumb_cmc_setback'),
+    ('Polegar - CMC radial', 'Socket_127', 0.0, 'thumb_cmc_radial'),
+    # Baixar Z do polegar (2026-07-06): feed CMC Z via ThumbCMC_Z = baixar x -1 (positivo = desce).
+    ('Polegar - CMC baixar', 'Socket_148', 0.0, 'thumb_cmc_lower'),
     # --- Dedos - Abduções ---
     ('Dedos - Abdução geral', 'Socket_99', 0.0, 'fingers_abduction_general'),
     ('Indicador - Abdução', 'Socket_76', -12.35, 'index_abduction'),
@@ -87,6 +108,23 @@ PARAMETERS: tuple[tuple[str, str, float, str], ...] = (
     ('Mindinho - Lateral MCP', 'Socket_122', 0.0, 'pinky_lateral_mcp'),
     ('MCP - Visual coroa', 'Socket_116', 0.58, 'mcp_visual_crown'),
     ('MCP - Raio cabeças', 'Socket_117', 9.6, 'mcp_radius_heads'),
+    # --- Metacarpos - Arco Z (arco transversal da mao, 2026-07-06; RAIO RIGIDO v3) ---
+    # Os sliders sao ANGULOS (graus). Cada RAIO do dedo (osso metacarpo + esfera MCP + falanges)
+    # gira RIGIDO em torno da BASE do metacarpo. O grupo Metacarpo_Osso expoe output 'Base P' (=BV,
+    # ponto da base). Na arvore, por dedo, monta-se a matriz de rotacao em torno do pivo:
+    #   M = T(P) . Rx(theta) . T(-P)   (CombineTransform + MatrixMultiply)
+    # e aplica-se o MESMO M (GeometryNodeTransform mode='Matrix') aos 3: cubo (ArcoRot_TFbone),
+    # esfera (SphereArco_TF) e falanges (ArcoRot_TFfal apos FalangeZ_TF). Como e UMA matriz rigida
+    # unica pros 3, nada descola nem deforma; a base fica fixa (eixo dos arcos da mao). theta=graus.
+    # (v1 'Head Z off' esticava o osso; v2 'Head Delta' so transladava esfera/falange -> kink. v3 e
+    # rotacao rigida do raio inteiro, o que o usuario pediu.) Sinal: por-dedo positivo = cabeca pra
+    # cima (+Z dorsal). Geral usa pesos (indic -0.6/medio 0.0/anelar -0.3/mindinho -1.0) => geral
+    # positivo = cup (laterais descem, medio = quilha).
+    ('Metacarpos - Arco Z geral', 'Socket_153', 0.0, 'metacarpals_arch_z_general'),
+    ('Indicador - Arco Z', 'Socket_154', 0.0, 'index_arch_z'),
+    ('Médio - Arco Z', 'Socket_155', 0.0, 'middle_arch_z'),
+    ('Anelar - Arco Z', 'Socket_156', 0.0, 'ring_arch_z'),
+    ('Mindinho - Arco Z', 'Socket_157', 0.0, 'pinky_arch_z'),
 )
 
 
@@ -98,6 +136,7 @@ REGIONS: tuple[tuple[str, str], ...] = (
     ('PANEL_FINGERS_COMPRIMENTOS', 'Dedos - Comprimentos'),
     ('PANEL_FINGERS_MOVIMENTO', 'Dedos - Movimento'),
     ('PANEL_FINGERS_MCP_PIVS', 'Dedos - MCP / Pivôs'),
+    ('PANEL_POLEGAR_CMC', 'Polegar - CMC'),
 )
 
 

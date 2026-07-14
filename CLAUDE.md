@@ -103,6 +103,216 @@ conn.execute_code("import bpy; print('ok')")               # patch
 
 > **Atualizar esta seção após cada sessão.**
 
+### Pose da curva ulnar — REPARO ISOLADO CONCLUÍDO (2026-07-13)
+
+- `Desvio Rad/Ulnar Punho` e `Flex/Ext Punho` já chegavam ao grupo
+  `V4_ORT_CurvaUlnar_Lateral_Comprimento`, mas o delta de pose era usado apenas para orientar as
+  translações. A geometria da curva ulnar permanecia rígida e, por isso, deixava de acompanhar a mão.
+- Foi acrescentado somente o nó matricial `Ulnar_Pose_Aplicada`, entre
+  `Ulnar_Combined_Translation` e `Ulnar_Relative_Left`. A ordem preserva os canais existentes e
+  aplica à curva o mesmo delta `pose atual × inversa(pose ref)` já usado pela borda radial.
+- **Verificação isolada:** sweeps de `+15°` produziram erro máximo de pose `3,44e-5 mm` no desvio e
+  `4,83e-5 mm` na flexão/extensão. Os endpoints ulnares permaneceram presos com erro máximo
+  `3,08e-5 mm`. Perímetro e comprimento passaram novamente por seus testes anteriores sem regressão;
+  pontos, handles e transforms brutos ficaram intactos e nenhum driver ficou inválido.
+- Patch: `runtime/patch_v4_ulnar_wrist_pose_only.py`; validação:
+  `runtime/validate_v4_ulnar_wrist_pose_only.py`; snapshot anterior:
+  `runtime/snapshots/ulnar_wrist_pose_repair/biomodelov4_PRE_ULNAR_WRIST_POSE_20260713T225556.blend`.
+
+### Perímetro lateral ulnar + avanço conjunto por comprimento — CONCLUÍDO (2026-07-13)
+
+- A correção foi limitada aos dois comportamentos confirmados pelo usuário. `Perímetro Punho`
+  desloca `V4_ORT_CurvaUlnar_Garra` **somente na direção lateral local**; não acrescenta avanço
+  longitudinal nem altera a espessura. O deslocamento usa as larguras já governadas pelo punho:
+  `DeltaX = -0,3877699971*DeltaLarguraMC - 0,5*DeltaLarguraOsso`.
+- `Mão - Punho até MCP médio` voltou a mover a curva ulnar com a mesma translação rígida 1:1 da
+  curva do polegar. Como os oito perfis continuam ancorados entre essas duas bordas, todos avançam
+  juntos, sem esticar, girar ou deixar o extremo ulnar preso.
+- Os dois canais são independentes no modificador `ORT_Ulnar_Lateral_Comprimento`, usando o grupo
+  `V4_ORT_CurvaUlnar_Lateral_Comprimento`: punho atua só no X local ulnar; comprimento atua só no
+  Y local antes da conversão pela pose atual do punho. Pontos, handles e transforms brutos das
+  curvas foram preservados; erro neutro máximo `3,1e-5 mm`; nenhum driver inválido.
+- **Verificação:** sweep de comprimento `104,78 / 124,78 mm` apresentou erro máximo ulnar↔polegar
+  `1,1e-5 mm`, dispersão rígida máxima dos perfis `3,2e-5 mm` e erro de extensão `4,6e-5 mm`.
+  Sweep de punho `152,71 / 192,71 mm` produziu `±4,393 mm` laterais, com resíduo longitudinal
+  local máximo `0,0015 mm` e erro dos endpoints `3,2e-5 mm`. No teste combinado, o erro contra a
+  soma independente dos dois movimentos foi `7,1e-6 mm`. Os valores vivos foram restaurados.
+- Patch: `runtime/patch_v4_ulnar_lateral_and_hand_length_follow.py`; validação:
+  `runtime/validate_v4_ulnar_lateral_and_hand_length_follow.py`; backup anterior:
+  `runtime/snapshots/ulnar_lateral_hand_length/biomodelov4_PRE_ULNAR_MINIMAL_20260713T220007.blend`.
+
+### Curva ulnar + ancoragem dos perfis + controle de curvatura — CONCLUÍDO (2026-07-12)
+
+- Criado o objeto `V4_ORT_CurvaUlnar_Garra` na coleção `ORT_Piloto_GN`. A construção inicial com
+  oito pontos foi reduzida a uma única Bézier de **dois pontos**, preservando exatamente os
+  endpoints dos perfis 01 e 08. Os dois handles livres foram ajustados por mínimos quadrados aos
+  seis endpoints intermediários; distância inicial máxima ao shape anterior: `1,83 mm`.
+- O desenho manual posterior do usuário foi preservado exatamente. A curva continua livre, azul e
+  `show_in_front`, sem modificadores, drivers ou constraints; editar seus pontos, handles ou transform
+  agora reposiciona automaticamente os endpoints ulnares dos oito perfis.
+- `V4_ORT_PerfilAncorado_MC` ganhou `Object Info (Relative) -> Sample Curve (Factor) -> Set Position`.
+  Cada perfil guarda uma estação monotônica por comprimento entre `0,05109` e `0,99868`. A borda
+  radial permaneceu imóvel; erro máximo dos endpoints sobre a curva ulnar: `4,6e-5 mm`. Transladar
+  a curva 10 mm gerou erro de acompanhamento máximo `1,5e-5 mm`; alterar seu handle moveu as estações.
+- Criado o Empty `V4_ORT_CTRL_CurvaturaPalma`, selecionado e bloqueado para movimento somente em Z.
+  Ele controla simultaneamente o handle interno radial e o interno ulnar de cada perfil, sem editar
+  coordenadas brutas. Ganho 1:1: teste `Z=-10 mm` abaixou o ventre de todas as seções em `7,5 mm`
+  (componente vertical `-7,429 mm`) e moveu ambos os endpoints `0,0 mm`.
+- Scripts: `runtime/create_v4_ulnar_boundary_curve.py` e
+  `runtime/reduce_v4_ulnar_curve_to_two_points.py`. Backup anterior à redução:
+  `runtime/snapshots/ulnar_curve_two_points/biomodelov4_PRE_ULNAR_2PT_20260712T184051.blend`;
+  backup anterior à criação:
+  `runtime/snapshots/ulnar_curve_free/biomodelov4_PRE_ULNAR_CURVE_20260712T183841.blend`.
+- Patch de ancoragem/controle:
+  `runtime/patch_v4_ulnar_profile_anchor_and_curvature_control.py`; backup imediatamente anterior:
+  `runtime/snapshots/ulnar_profile_anchor/biomodelov4_PRE_ULNAR_ANCHOR_20260712T185348.blend`.
+
+### Pose do punho -> rotação conjunta das curvas — CONCLUÍDO (2026-07-12)
+
+- `Desvio Rad/Ulnar Punho` (`Socket_24`) e `Flex/Ext Punho` (`Socket_25`) foram propagados pelo
+  objeto longitudinal até os oito perfis. A pose viva **0,02° / -16,14°** é a referência neutra.
+- A cadeia replica exatamente o biomodelo: `Rz(desvio)` primeiro, depois `Rx(flexão)`. O delta
+  matricial é `M_atual × inversa(M_ref)` e é conjugado pela origem local de cada objeto, fazendo
+  todas as curvas girarem ao redor do mesmo pivô global do punho sem alterar transforms de objeto.
+- **Verificação:** comparação headless contra o snapshot pré-patch = `0,0 mm` nas nove curvas no
+  neutro; sweep de flexão com erro máximo `2,3e-5 mm`; sweep de desvio/pose combinada com resíduo
+  máximo de centroide `0,029 mm`; renders top/side confirmam curvas acompanhando a mão nos quatro
+  extremos testados. Drivers válidos e pose original restaurada.
+- Patch: `runtime/patch_v4_wrist_pose_curve_follow.py`; backup:
+  `runtime/snapshots/wrist_pose_curve_follow/biomodelov4_PRE_WRIST_POSE_20260712T165811.blend`.
+- **Reintegração após o deslocamento rígido do polegar (mesmo dia):** `Acompanhar_Pose_Punho`
+  foi restaurado nos dois grupos e agora vem depois de `Ajustar_Comprimento_Mao_Rigido`:
+  `âncora CMC -> comprimento da mão -> pose do punho -> saída`. Sweep `-20°/+20°` moveu as nove
+  curvas com erro máximo de forma `6,2e-5 mm`. No teste combinado desvio `+20°` + comprimento
+  `135 mm`, polegar e curva diferiram apenas `1,7e-6 mm`. Drivers válidos; pose restaurada em
+  `0,02°/-16,14°`. Backup: `runtime/snapshots/wrist_pose_curve_follow/biomodelov4_PRE_WRIST_POSE_20260712T183334.blend`.
+
+### Mão - Punho até MCP médio -> deslocamento do polegar e curvas — CONCLUÍDO (2026-07-12)
+
+- `Socket_161` deixou de escalar/deformar a curva longitudinal. A referência paramétrica continua
+  **115 mm**; polegar e curvas usam o mesmo zero, enquanto o valor vivo do slider permanece livre
+  e é preservado durante os patches. As coordenadas brutas das curvas não foram alteradas.
+- A parametrização anterior da mão continua ativa. Sobre ela, a medida agora acrescenta uma
+  **translação rígida** ao polegar já articulado, depois do FK. Assim metacarpo e falanges viajam
+  juntos, sem cada segmento herdar uma direção diferente.
+- `Polegar - CMC recuo` (`Socket_126`) permanece ligado ao `ThumbCMC_Y` original e continua sendo
+  o ajuste fino. O deslocamento da medida é aplicado depois, em `Mover_Polegar_Com_Mao`, portanto
+  os dois controles são aditivos e independentes.
+- `ORT_PerfilPolegar_Garra` e os oito `V4_ORT_PerfilPalma_*` recebem exatamente a mesma translação
+  rígida. Nenhum perfil fica preso ao punho para este parâmetro: todos conservam suas estações
+  relativas e acompanham o polegar sem alterar comprimento, largura ou curvatura.
+- **Verificação:** sweep `95 / 135 mm` (±20 mm da referência) isolou 24 vértices do polegar movendo como
+  bloco, com dispersão máxima `4,6e-5 mm`; as nove curvas tiveram dispersão máxima `2,7e-5 mm` e
+  erro de extensão máximo `3,1e-5 mm`. Erro polegar↔curvas `0,0070 mm`. Repetição com o CMC fino
+  acrescido de 5 mm alterou a translação em apenas `1,9e-6 mm`. Drivers válidos; valores restaurados.
+- Patch: `runtime/patch_v4_hand_length_thumb_translation.py`; validação:
+  `runtime/validate_v4_hand_length_thumb_translation.py`; backup anterior a qualquer mutação deste
+  lote: `runtime/snapshots/hand_length_thumb_translation/biomodelov4_PRE_THUMB_TRANSLATION_20260712T181350.blend`.
+- Histórico supersedido: `runtime/patch_v4_hand_length_curve_follow.py` e snapshot
+  `runtime/snapshots/hand_length_curve_follow/biomodelov4_PRE_HAND_LENGTH_20260712T165107.blend`.
+
+### Espessura da palma -> acompanhamento vertical das curvas — CONCLUÍDO (2026-07-12)
+
+- `Espessura da Palma` (`Socket_31`) foi propagada por `V4_ORT_CurvaAncorada_MC` até os oito
+  perfis de `V4_ORT_PerfilAncorado_MC`. O neutro vivo de **23,06999 mm** foi preservado.
+- As nove curvas acompanham a face palmar inferior pela mesma fórmula da palma viva:
+  `DeltaZ = -0,4713219472 * (EspessuraAtual - EspessuraRef)`. O fator combina o movimento do
+  centro (`-0,0963219553`) com metade da espessura efetiva dos metacarpos (`0,75/2`).
+- **Verificação:** 18 mm -> `+2,38960 mm`; 32 mm -> `-4,20891 mm`; erro máximo
+  `2,4e-5 mm`; deslocamento XY `0`; coordenadas e transforms brutos intactos no neutro.
+- O perímetro do punho não passou a substituir a espessura: será camada futura de estimativa/preset,
+  mantendo override clínico. Estratégia e referências: `docs/PALM_ANTHROPOMETRY_STRATEGY_2026-07-12.md`.
+  Patch: `runtime/patch_v4_palm_thickness_curve_follow.py`; backup:
+  `runtime/snapshots/palm_thickness_curve_follow/biomodelov4_PRE_PALM_THICKNESS_20260712T163953.blend`.
+
+### Acoplamento punho -> largura da palma + anchor ulnar dos perfis — CONCLUÍDO (2026-07-12)
+
+- No objeto vivo `Sombra_Edu_Garra_D` (`Biomodelo.008`), `Perímetro Punho` virou a medida
+  mestra de `Largura Metacarpo` e `Palma - Largura ossos`. Drivers proporcionais preservam o
+  caso Edu/Garra como neutro: **148,87999 -> 61,13000 / 18,0 mm**. As três referências ficam
+  editáveis nas custom properties `anthro_*_ref_mm` para refinamento com uma coorte futura.
+- O grupo `V4_ORT_PerfilAncorado_MC` ganhou expansão transversal local antes do delta matricial
+  do polegar. A origem radial de cada perfil permanece fixa e o extremo ulnar segue a variação
+  da face externa do metacarpo do mindinho pela fórmula
+  `DeltaVao = 0,66777*DeltaLarguraMC + 0,5*DeltaLarguraOsso`.
+- Cada um dos 8 perfis guarda seu próprio vão neutro (`Calibracao - Vao ulnar ref`), evitando
+  que curvas de comprimentos diferentes recebam deslocamentos diferentes. `Palma - Largura
+  ossos` foi propagada pelo barramento `V4_ORT_CurvaAncorada_MC`.
+- **Verificação:** neutro preservado em `1,1e-5 mm`; sweep de punho 130 mm recolhe o extremo
+  ulnar **6,31795 mm** adicionais e 180 mm expande **10,41391 mm**; erro máximo contra a fórmula
+  `5,2e-6 mm`; nenhum driver inválido. Inspeção visual top confirmou abertura apenas ulnar.
+- **Recuperação pós-undo + recalibração da face (mesmo dia):** `Ctrl+Z` removeu o lote inteiro
+  sem deixar estado parcial; patch reaplicado. O diagnóstico por BVH mostrou que os endpoints
+  ulnares neutros antigos estavam **3,8–7,6 mm fora** do proxy. Os 8 endpoints + handles finais
+  foram projetados por ray local X na primeira superfície ulnar real e seus vãos-ref atualizados.
+  Erro neutro agora `<= 4,9e-5 mm`; sweeps 130/180 ficam `<= 0,93 / 1,82 mm` da superfície
+  (resíduo não linear das cabeças MCP). Patch: `runtime/patch_v4_ulnar_endpoint_recalibration.py`;
+  backup: `runtime/snapshots/ulnar_endpoint_recalibration/biomodelov4_PRE_ULNAR_RECAL_20260712T033028.blend`.
+- Snapshot anterior: `runtime/snapshots/palm_width_coupling/biomodelov4_PRE_PALM_WIDTH_20260712T031405.blend`.
+  Patch reproduzível: `runtime/patch_v4_palm_width_coupling.py`. Arquivo vivo salvo em
+  `biomodelov4.blend`.
+- **Restauro do alinhamento das curvas (2026-07-12):** a comparação com o snapshot pré-recalibração
+  confirmou que nenhuma transformação de objeto havia mudado; somente o endpoint ulnar e seus dois
+  handles foram deslocados em X local (4,69–7,78 mm). As oito Béziers e seus vãos neutros foram
+  restaurados exatamente ao estado `PRE_ULNAR_RECAL`, mantendo intactos os drivers de punho, o
+  socket `Palma - Largura ossos` e todo o subgrafo de expansão paramétrica. Patch:
+  `runtime/patch_v4_restore_curve_positions.py`; backup:
+  `runtime/snapshots/curve_position_restore/biomodelov4_PRE_CURVE_RESTORE_20260712T162328.blend`.
+
+### Limpeza de nós mortos + reapontamento das réplicas — CONCLUÍDO (2026-07-05)
+
+- **Sweep de alcançabilidade** (BFS a partir do Group Output): 20 nós mortos removidos —
+  laje da palma inteira (`Cube/TF_Metacarpo1.001`, `Cube_Falange21.001/TF` + feeders
+  `AnchorY/NegAnchor/TFVec/SzVec/LargPalma_*`), 2 nós de folga visual e um par
+  `Mesh to Volume`/`Volume to Mesh` solto. **161→142 nós**, malha idêntica (Δ=0.0 mm).
+  Backup `Biomodelo_PRELIMPEZA_20260705T135644`.
+- **Réplicas reapontadas:** `Biomodelo_Edu.001/.002/.003` agora usam a árvore canônica
+  `Biomodelo` (63/63 valores preservados por identifier; sockets 124–128 inicializados
+  27/10/0/0/1.0; malhas ok). As forks `Biomodelo.001/.002/.004` ficaram sem usuários →
+  purgadas no próximo save. `Biomodelo_Edu.004` (experimento v6 de órtese, `Biomodelo.005`)
+  ficou intocado. **Polegar das réplicas precisa re-ajuste** (valores antigos compensavam o
+  polegar velho).
+
+### Desacoplamento da Espessura da Palma — CONCLUÍDO (2026-07-05)
+
+`Espessura` não engorda mais os dedos nem desloca a mão. Detalhes:
+`docs/ESPESSURA_DECOUPLE_2026-07-05.md`. Backup `Biomodelo_PREESPESSURA_20260705T132536`.
+
+- **Socket novo (67→68):** `Dedos - Fator espessura` (Socket_128, default 1.0) — multiplica
+  APENAS falanges+polegar (nós locais `EspDedos_*` em 4 frames → 13 ratio-nodes). Palma
+  (ossos `Osso_*` via novo `EspProx_Palma = Esp×0.714` cru) e topo-palma seguem Esp crua.
+- **Carpo rebaseado no punho:** `Comprimento_Carpo = Punho_raio×1.567586` (era `Esp×1.1`) —
+  engrossar a palma não desliza mais a mão em Y.
+- **Verificado:** A/B vs backup = 1.1e-05 mm (fator=1); fator 0.7 afina só dedos (×0.6999,
+  palma intacta); Esp 40 engorda palma ×1.408 com ponta Y intacta; Esp 40+fator 0.71 = palma
+  gorda com dedos idênticos ao ref.
+- **Achados:** cubos-laje da palma (`Cube/TF_Metacarpo1.001`, `Cube_Falange21.001/TF`) são
+  **nós MORTOS** — palma real são os `Osso_*`; candidatos a sweep de limpeza. Gotcha bridge:
+  `execute_code` retorna `result` no topo (`r["result"]`), não aninhado.
+
+### Rebuild do polegar — cadeia CMC anatômica — CONCLUÍDA (2026-07-05)
+
+Polegar reconstruído espelhando a convenção do `FK_Cadeia_Dedo`: grupo novo **`Polegar_FK_v2`**
+(44 nós) com raiz na **CMC perto do punho** (paramétrica: `X = Largura_Metacarpo×0.28 + radial`,
+`Y = Carpo_raio×−0.5 + recuo`) em vez da base fixa Y=−75 centrada no metacarpo. Cadeia
+`Base(CMC) = T·Rz(palmar)·Ry(oposição)·Rz(abd)·Rx(flex)` → metacarpo → junta MCP na **face
+distal** → falange prox → junta IP → falange dist. Detalhes: `docs/THUMB_REBUILD_2026-07-05.md`.
+
+- **Sockets novos (63→67):** `Polegar - Ângulo palmar` (124, default 27°), `Polegar - Oposição`
+  (125, 10°), `Polegar - CMC recuo` (126), `Polegar - CMC radial` (127), painel `Polegar - CMC`.
+  Recabeados (identifiers preservados): 36/37 = flex/abd da **CMC**; 38/39 = flex **MCP/IP**.
+  Removidos: rotações de conjunto na origem (`TF_AbducaoPolegar`/`TF_ExtFlexPolegar` + feeders).
+- **Verificação por medição:** grupo isolado = previsão analítica com erro 0.0 em 5 poses;
+  árvore viva com punho neutro erro máx 0.43 mm; sweeps (flex MCP, oposição, abd, escala
+  largura/espessura) todos proporcionais e sem posição fixa. Backup:
+  `Biomodelo_PREPOLEGAR_20260705T003112`.
+- **Gotchas:** sockets novos ficam 0 nos modifiers existentes (setar via `set_param`);
+  Blender 5.1: modo do `GeometryNodeTransform` é input `Mode` = `'Matrix'`; medir o polegar
+  exige punho neutro (desvio do punho gira a mão toda) e marcação por segmento.
+- **Pendências:** reapontar réplicas forkadas (`Biomodelo.001/.002/.004`) pro canônico + setar
+  Socket_124–127; item A do diagnóstico (desacoplar Espessura) aguardando GO; órtese parada a
+  pedido; **`.blend` por salvar**.
+
 ### Reorganização visual + subgrupos da árvore — CONCLUÍDA (2026-06-16)
 
 A árvore tinha ficado ilegível; reorganizada e enxugada. Detalhes em

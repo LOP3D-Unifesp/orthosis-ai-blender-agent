@@ -1,98 +1,111 @@
 {
  "schema": "biomodel_sockets.v1",
- "generated_at": "2026-06-16 (lateral MCP add)",
+ "generated_at": "2026-07-07T02:56:23.225748+00:00",
  "tree": "Biomodelo",
  "object": "Biomodelo_Edu",
- "socket_count": 63,
+ "socket_count": 89,
  "panels": [
-  "Geral",
   "Medidas (tamanho)",
   "Movimento (pose)",
   "Dedos - Abduções",
   "Dedos - Comprimentos",
   "Dedos - Movimento",
-  "Dedos - MCP / Pivôs"
+  "Dedos - MCP / Piv?s",
+  "Carpo",
+  "Metacarpos - Base",
+  "Membro (lado)",
+  "Polegar / Base / CMC",
+  "Polegar / Falanges",
+  "Metacarpos - Arco Z"
  ],
  "sockets": [
-  {
-   "name": "Largura Dedo",
-   "identifier": "Socket_80",
-   "role": "width_finger",
-   "socket_type": "NodeSocketFloat",
-   "panel": "Geral",
-   "value": 17.25
-  },
   {
    "name": "Comp Antebraço",
    "identifier": "Socket_21",
    "role": "length_forearm",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 270.35
+   "value": 269.5
   },
   {
    "name": "Perímetro Cotovelo",
    "identifier": "Socket_22",
    "role": "perimeter_elbow",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 234.3628
+   "value": 234.36280822753906
   },
   {
    "name": "Perímetro Punho",
    "identifier": "Socket_23",
    "role": "perimeter_wrist",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 139.0
+   "value": 148.87998962402344
   },
   {
    "name": "Comp Metacarpo",
    "identifier": "Socket_29",
    "role": "length_metacarpal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 90.42
+   "value": 49.47999572753906
   },
   {
    "name": "Largura Metacarpo",
    "identifier": "Socket_30",
    "role": "width_metacarpal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 84.28
+   "value": 78.89000701904297
   },
   {
    "name": "Espessura da Palma",
    "identifier": "Socket_31",
    "role": "thickness_da_palm",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 29.56
+   "value": 24.24999237060547
   },
   {
    "name": "Comp Metacarpo Polegar",
    "identifier": "Socket_33",
    "role": "length_metacarpal_thumb",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 60.73
+   "value": 51.69000244140625
   },
   {
    "name": "Comp Falange Prox Polegar",
    "identifier": "Socket_40",
    "role": "length_phalange_prox_thumb",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 27.8
+   "value": 20.0
   },
   {
    "name": "Comp Falange Dist Polegar",
    "identifier": "Socket_43",
    "role": "length_phalange_dist_thumb",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Medidas (tamanho)",
-   "value": 20.53
+   "value": 32.0
+  },
+  {
+   "name": "Palma - Largura ossos",
+   "identifier": "Socket_128",
+   "role": "palm_bones_width",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Medidas (tamanho)",
+   "value": 18.0
+  },
+  {
+   "name": "Dedos - Tamanho",
+   "identifier": "Socket_80",
+   "role": "fingers_size",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Medidas (tamanho)",
+   "value": 14.759998321533203
   },
   {
    "name": "Desvio Rad/Ulnar Punho",
@@ -100,7 +113,7 @@
    "role": "deviation_radial_ulnar_wrist",
    "socket_type": "NodeSocketFloat",
    "panel": "Movimento (pose)",
-   "value": -5.38
+   "value": -6.039999961853027
   },
   {
    "name": "Flex/Ext Punho",
@@ -114,49 +127,17 @@
    "name": "Curva Palma Metacarpo 1",
    "identifier": "Socket_27",
    "role": "curve_palm_metacarpal_1",
-   "socket_type": "NodeSocketFloatAngle",
+   "socket_type": "NodeSocketFloat",
    "panel": "Movimento (pose)",
-   "value": 0.0
+   "value": 0.2647664546966553
   },
   {
    "name": "Curva Palma Metacarpo 2",
    "identifier": "Socket_28",
    "role": "curve_palm_metacarpal_2",
-   "socket_type": "NodeSocketFloatAngle",
+   "socket_type": "NodeSocketFloat",
    "panel": "Movimento (pose)",
    "value": 0.0
-  },
-  {
-   "name": "Flex/Ext Polegar",
-   "identifier": "Socket_36",
-   "role": "flexion_thumb",
-   "socket_type": "NodeSocketFloat",
-   "panel": "Movimento (pose)",
-   "value": 6.2
-  },
-  {
-   "name": "Abdução Polegar",
-   "identifier": "Socket_37",
-   "role": "abduction_thumb",
-   "socket_type": "NodeSocketFloat",
-   "panel": "Movimento (pose)",
-   "value": 11.82
-  },
-  {
-   "name": "Flex/Ext Falange Prox Polegar",
-   "identifier": "Socket_38",
-   "role": "flexion_phalange_prox_thumb",
-   "socket_type": "NodeSocketFloat",
-   "panel": "Movimento (pose)",
-   "value": 3.77
-  },
-  {
-   "name": "Flex/Ext Falange Dist Polegar",
-   "identifier": "Socket_39",
-   "role": "flexion_phalange_dist_thumb",
-   "socket_type": "NodeSocketFloat",
-   "panel": "Movimento (pose)",
-   "value": -19.0
   },
   {
    "name": "Dedos - Abdução geral",
@@ -164,7 +145,7 @@
    "role": "fingers_abduction_general",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Abduções",
-   "value": 0.0
+   "value": -0.2800000309944153
   },
   {
    "name": "Indicador - Abdução",
@@ -172,7 +153,7 @@
    "role": "index_abduction",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Abduções",
-   "value": -12.35
+   "value": -10.5
   },
   {
    "name": "Médio - Abdução",
@@ -180,7 +161,7 @@
    "role": "middle_abduction",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Abduções",
-   "value": 0.16
+   "value": -2.6100001335144043
   },
   {
    "name": "Anelar - Abdução",
@@ -188,7 +169,7 @@
    "role": "ring_abduction",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Abduções",
-   "value": -18.8
+   "value": -17.65999984741211
   },
   {
    "name": "Mindinho - Abdução",
@@ -196,31 +177,31 @@
    "role": "pinky_abduction",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Abduções",
-   "value": -34.63
+   "value": -32.70000076293945
   },
   {
    "name": "Indicador - Comp. falange proximal",
    "identifier": "Socket_50",
    "role": "index_length_phalange_proximal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 20.76
+   "value": 22.0
   },
   {
    "name": "Indicador - Comp. falange média",
    "identifier": "Socket_53",
    "role": "index_length_phalange_middle",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 18.96
+   "value": 20.0
   },
   {
    "name": "Indicador - Comp. falange distal",
    "identifier": "Socket_56",
    "role": "index_length_phalange_distal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 25.15
+   "value": 29.0
   },
   {
    "name": "Médio - Comp. falange proximal",
@@ -228,7 +209,7 @@
    "role": "middle_length_phalange_proximal",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 25.61
+   "value": 25.0
   },
   {
    "name": "Médio - Comp. falange média",
@@ -236,7 +217,7 @@
    "role": "middle_length_phalange_middle",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 25.4
+   "value": 28.0
   },
   {
    "name": "Médio - Comp. falange distal",
@@ -244,31 +225,31 @@
    "role": "middle_length_phalange_distal",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 27.66
+   "value": 28.0
   },
   {
    "name": "Anelar - Comp. falange proximal",
    "identifier": "Socket_63",
    "role": "ring_length_phalange_proximal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 22.38
+   "value": 20.0
   },
   {
    "name": "Anelar - Comp. falange média",
    "identifier": "Socket_66",
    "role": "ring_length_phalange_middle",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 25.79
+   "value": 21.0
   },
   {
    "name": "Anelar - Comp. falange distal",
    "identifier": "Socket_69",
    "role": "ring_length_phalange_distal",
-   "socket_type": "NodeSocketFloatDistance",
+   "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 23.61
+   "value": 26.0
   },
   {
    "name": "Mindinho - Comp. falange proximal",
@@ -276,7 +257,7 @@
    "role": "pinky_length_phalange_proximal",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 18.36
+   "value": 15.0
   },
   {
    "name": "Mindinho - Comp. falange média",
@@ -284,7 +265,7 @@
    "role": "pinky_length_phalange_middle",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 21.48
+   "value": 16.0
   },
   {
    "name": "Mindinho - Comp. falange distal",
@@ -292,7 +273,7 @@
    "role": "pinky_length_phalange_distal",
    "socket_type": "NodeSocketFloat",
    "panel": "Dedos - Comprimentos",
-   "value": 20.3
+   "value": 26.0
   },
   {
    "name": "Dedos - Flex/Ext proximal geral",
@@ -418,105 +399,337 @@
    "name": "Dedos - Avanço MCP geral",
    "identifier": "Socket_110",
    "role": "fingers_advance_mcp_general",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 8.54
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 14.270000457763672
   },
   {
    "name": "Dedos - Curvatura arco MCP",
    "identifier": "Socket_111",
    "role": "fingers_curvature_arch_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.32
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 12.469999313354492
   },
   {
    "name": "Indicador - Avanço MCP",
    "identifier": "Socket_112",
    "role": "index_advance_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 3.24
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -1.929999828338623
   },
   {
    "name": "Médio - Avanço MCP",
    "identifier": "Socket_113",
    "role": "middle_advance_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.19
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -7.539999961853027
   },
   {
    "name": "Anelar - Avanço MCP",
    "identifier": "Socket_114",
    "role": "ring_advance_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.23
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 0.20000004768371582
   },
   {
    "name": "Mindinho - Avanço MCP",
    "identifier": "Socket_115",
    "role": "pinky_advance_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": -1.37
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -5.339999675750732
   },
   {
    "name": "Dedos - Lateral MCP geral",
    "identifier": "Socket_118",
    "role": "fingers_lateral_mcp_general",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.0
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -1.649999976158142
   },
   {
    "name": "Indicador - Lateral MCP",
    "identifier": "Socket_119",
    "role": "index_lateral_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.0
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 3.6500000953674316
   },
   {
    "name": "Médio - Lateral MCP",
    "identifier": "Socket_120",
    "role": "middle_lateral_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.0
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -2.1399998664855957
   },
   {
    "name": "Anelar - Lateral MCP",
    "identifier": "Socket_121",
    "role": "ring_lateral_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.0
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -2.809999942779541
   },
   {
    "name": "Mindinho - Lateral MCP",
    "identifier": "Socket_122",
    "role": "pinky_lateral_mcp",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.0
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": -1.8899998664855957
   },
   {
    "name": "MCP - Visual coroa",
    "identifier": "Socket_116",
    "role": "mcp_visual_crown",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 0.58
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 0.050000011920928955
   },
   {
    "name": "MCP - Raio cabeças",
    "identifier": "Socket_117",
    "role": "mcp_radius_heads",
-   "socket_type": "NodeSocketFloatDistance",
-   "panel": "Dedos - MCP / Pivôs",
-   "value": 9.6
+   "socket_type": "NodeSocketFloat",
+   "panel": "Dedos - MCP / Piv?s",
+   "value": 9.600000381469727
+  },
+  {
+   "name": "Carpo - Escala Y",
+   "identifier": "Socket_131",
+   "role": "carpo_scale_y",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Carpo",
+   "value": 1.0600000619888306
+  },
+  {
+   "name": "Carpo - Raio (x punho)",
+   "identifier": "Socket_143",
+   "role": "carpo_radius_x_wrist",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Carpo",
+   "value": 1.0
+  },
+  {
+   "name": "Metacarpos - Recuo geral",
+   "identifier": "Socket_133",
+   "role": "metacarpals_setback_general",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 0.5999999642372131
+  },
+  {
+   "name": "Indicador - Recuo",
+   "identifier": "Socket_134",
+   "role": "index_setback",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 4.210000038146973
+  },
+  {
+   "name": "Médio - Recuo",
+   "identifier": "Socket_135",
+   "role": "middle_setback",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 0.28999999165534973
+  },
+  {
+   "name": "Anelar - Recuo",
+   "identifier": "Socket_136",
+   "role": "ring_setback",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 2.559999942779541
+  },
+  {
+   "name": "Mindinho - Recuo",
+   "identifier": "Socket_137",
+   "role": "pinky_setback",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 5.739999771118164
+  },
+  {
+   "name": "Metacarpos - Radial geral",
+   "identifier": "Socket_138",
+   "role": "metacarpals_radial_general",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": -1.409999966621399
+  },
+  {
+   "name": "Indicador - Radial",
+   "identifier": "Socket_139",
+   "role": "index_radial",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 2.0799999237060547
+  },
+  {
+   "name": "Médio - Radial",
+   "identifier": "Socket_140",
+   "role": "middle_radial",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": -1.7699999809265137
+  },
+  {
+   "name": "Anelar - Radial",
+   "identifier": "Socket_141",
+   "role": "ring_radial",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": -1.3899999856948853
+  },
+  {
+   "name": "Mindinho - Radial",
+   "identifier": "Socket_142",
+   "role": "pinky_radial",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Base",
+   "value": 0.0
+  },
+  {
+   "name": "Membro esquerdo",
+   "identifier": "Socket_145",
+   "role": "left_limb",
+   "socket_type": "NodeSocketBool",
+   "panel": "Membro (lado)",
+   "value": false
+  },
+  {
+   "name": "Polegar - Ângulo palmar",
+   "identifier": "Socket_124",
+   "role": "thumb_palmar_angle",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 30.360002517700195
+  },
+  {
+   "name": "Polegar - Oposição",
+   "identifier": "Socket_125",
+   "role": "thumb_opposition",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 3.7899999618530273
+  },
+  {
+   "name": "Flex/Ext Polegar",
+   "identifier": "Socket_36",
+   "role": "flexion_thumb",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 7.929999828338623
+  },
+  {
+   "name": "Abdução Polegar",
+   "identifier": "Socket_37",
+   "role": "abduction_thumb",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 13.00999927520752
+  },
+  {
+   "name": "Polegar - CMC recuo",
+   "identifier": "Socket_126",
+   "role": "thumb_cmc_setback",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": -8.469999313354492
+  },
+  {
+   "name": "Polegar - CMC radial",
+   "identifier": "Socket_127",
+   "role": "thumb_cmc_radial",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 3.1399996280670166
+  },
+  {
+   "name": "Polegar - CMC baixar",
+   "identifier": "Socket_148",
+   "role": "thumb_cmc_lower",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Base / CMC",
+   "value": 9.09999942779541
+  },
+  {
+   "name": "Flex/Ext Falange Prox Polegar",
+   "identifier": "Socket_38",
+   "role": "flexion_phalange_prox_thumb",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Falanges",
+   "value": -10.59999942779541
+  },
+  {
+   "name": "Polegar - Palmar falange prox",
+   "identifier": "Socket_146",
+   "role": "thumb_palmar_prox",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Falanges",
+   "value": -4.880000591278076
+  },
+  {
+   "name": "Flex/Ext Falange Dist Polegar",
+   "identifier": "Socket_39",
+   "role": "flexion_phalange_dist_thumb",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Falanges",
+   "value": 2.4800002574920654
+  },
+  {
+   "name": "Polegar - Palmar falange dist",
+   "identifier": "Socket_147",
+   "role": "thumb_palmar_dist",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Polegar / Falanges",
+   "value": 6.369999885559082
+  },
+  {
+   "name": "Metacarpos - Arco Z geral",
+   "identifier": "Socket_153",
+   "role": "metacarpals_arch_z_general",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Arco Z",
+   "value": 0.0
+  },
+  {
+   "name": "Indicador - Arco Z",
+   "identifier": "Socket_154",
+   "role": "index_arch_z",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Arco Z",
+   "value": -2.8299999237060547
+  },
+  {
+   "name": "Médio - Arco Z",
+   "identifier": "Socket_155",
+   "role": "middle_arch_z",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Arco Z",
+   "value": 2.1700000762939453
+  },
+  {
+   "name": "Anelar - Arco Z",
+   "identifier": "Socket_156",
+   "role": "ring_arch_z",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Arco Z",
+   "value": -3.1700000762939453
+  },
+  {
+   "name": "Mindinho - Arco Z",
+   "identifier": "Socket_157",
+   "role": "pinky_arch_z",
+   "socket_type": "NodeSocketFloat",
+   "panel": "Metacarpos - Arco Z",
+   "value": -7.909999847412109
   }
  ]
 }

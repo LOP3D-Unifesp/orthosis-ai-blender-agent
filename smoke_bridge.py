@@ -1,4 +1,4 @@
-"""Smoke test: Claude Code → socket bridge → Blender (canal direto).
+"""Smoke test: cliente Python → socket bridge → Blender (canal direto).
 
 Prova o ciclo mínimo de pilotagem incremental:
   1. Ping — Blender responde via capture_scene
@@ -310,7 +310,7 @@ def main() -> int:
 
     conn = BlenderConnection(host=args.host, port=args.port)
 
-    print(f"\nSmoke test: Claude Code → socket bridge → Blender")
+    print(f"\nSmoke test: cliente Python → socket bridge → Blender")
     print(f"  target: {args.host}:{args.port}  tree: {args.tree}")
 
     passed = 0

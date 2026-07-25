@@ -8,7 +8,7 @@ derivação para os 4 dedos é trabalho da CALIBRAÇÃO (front PARADA por decis�
 "automações antes da calibração"). Não rodar `apply` desta camada na árvore atual sem essa
 reconciliação (risco da mão deformada). Ver `docs/SOCKET_CONTRACT_RECONCILE_2026-06-16.md`.
 
-Porte FIEL das tabelas de proporção do simulador da sócia (`simulador-mao3d-main`):
+Porte histórico das tabelas de proporção do simulador web original:
 - `src/constants/anthropometry.js`  → PALM_DIMS, RATIOS, PHAL_RATIOS, THUMB_RATIOS,
   TIP_SOFT_MM, SEX_RATIOS, THUMB_BASE_RATIO
 - `src/utils/anthropometry/profile.js` → interpPercentileScale, ageScale, buildProfile, makeDims

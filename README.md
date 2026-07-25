@@ -1,218 +1,252 @@
-# Orthosis AI Agent
+# Orthosis Bridge
 
-**An AI-powered Blender addon for parametric orthosis design using Geometry Nodes.**
+Núcleo de integração entre Python e Blender para inspecionar, construir e
+validar incrementalmente árvores Geometry Nodes do projeto de biomodelo e
+órtese.
 
-Embeds a Claude-based copilot in the Blender sidebar. The agent reads the Geometry Nodes tree context, proposes Python scripts (*drafts*), and the designer reviews and executes them manually. The long-term goal is a fully parametric orthosis geometry that a clinical professional adjusts via a parameter panel — without any interaction with the AI agent.
+> **Protótipo de pesquisa:** este projeto não é software médico validado. Não
+> deve ser usado diretamente para decisões clínicas, tratamento ou fabricação
+> de órteses sem validação profissional independente.
 
-Branch note: `codex/biomodel-source-migration` defines a new primary path for the biomodel: `GN_Biomodel_Source` generates `VB_Biomodel_Generated`, while the existing draft-mutation workflow remains legacy for explicit live-tree patching. See [`docs/BIOMODEL_SOURCE_MODE_DECISION.md`](docs/BIOMODEL_SOURCE_MODE_DECISION.md).
+## Escopo desta branch
 
----
+A branch `codex/slim-relevance` mantém o necessário para o trabalho atual:
 
-## ⚠️ Disclaimer
+- addon `Orthosis Bridge`, executado dentro do Blender;
+- bridge TCP local em `localhost:65432`;
+- cliente Python `blender_connection.py`;
+- ferramentas de leitura, edição, render e avaliação de Geometry Nodes;
+- painel antropométrico ainda em desenvolvimento;
+- testes automatizados e smoke test com o Blender;
+- mapas de parâmetros usados durante o refactor;
+- documentação técnica segura do biomodelo.
 
-**This is a research prototype.** It is not validated as medical or clinical software.
-Do not use for clinical decision-making, patient treatment planning, or production orthosis fabrication without independent professional validation.
-All generated scripts must be reviewed by a qualified engineer before execution.
+Não fazem parte do núcleo desta branch:
 
----
+- o antigo agente de chat embutido no Blender;
+- integração com Anthropic ou chave de API;
+- o adaptador MCP antigo;
+- o simulador web React/Three.js;
+- arquivos `.blend`, que permanecem como arquivos locais de trabalho;
+- relatórios, imagens, inventários e demais materiais de pesquisa ainda não
+  revisados para publicação.
 
-## Features
+Os materiais de pesquisa locais são ignorados pelo Git e devem ser
+transportados por armazenamento offline seguro. Isso evita que um `git add .`
+publique acidentalmente documentos, imagens ou medidas ainda em elaboração.
 
-- **Chat panel inside Blender** — sidebar copilot in the View3D viewport (N-panel → Orthosis tab)
-- **Scene context reading** — agent reads node tree structure, sockets, frames, links, and parameters
-- **Draft-based workflow** — agent proposes Python/bpy scripts; user reviews and runs them manually
-- **Biomodel source workflow** — migration path where a canonical Text block regenerates a disposable Geometry Nodes tree
-- **Fast paths** — greetings, help, and simple reads resolved without an API call
-- **Session persistence** — conversation history survives Blender restarts and file re-opens
-- **Post-failure recovery** — structured diagnosis when a script does not produce the expected result
-- **Automated tests** — 191 tests run without Blender or `bpy`
+## Como funciona
 
----
-
-## Architecture
-
+```text
+script Python externo
+        │
+        ▼
+blender_connection.py
+        │  TCP + JSON, localhost:65432
+        ▼
+blender_addon/server.py
+        │
+        ▼
+blender_addon/tools/handlers.py
+        │  execução na thread principal do Blender
+        ▼
+bpy / Geometry Nodes
 ```
-Blender UI  (ui/panel_chat_turn.py)
-  └─ AgentRuntime.run_turn()  (core/runtime.py)
-        ├─ Fast path          (fast_path.py)        ← no API call
-        ├─ Pending decision   (runtime/pending_decision.py)
-        ├─ Router             (runtime/router.py)   ← infer_turn_intent
-        └─ Workspace handler  (handler/workspace.py)
-              └─ Agent loop   (core/agent_loop.py)  ← Anthropic API + tool use
-                    └─ TCP socket :65432 → Blender tool dispatcher
-                          └─ tools/{draft, reads, edits, query, snapshots, ...}
-```
 
-Full step-by-step flow: [`docs/refactor_handoff/LIVE_FLOW.md`](docs/refactor_handoff/LIVE_FLOW.md)
+O addon inicia o bridge quando é habilitado. O painel **Orthosis**, na lateral
+da Viewport 3D, mostra o estado da porta e permite parar ou reiniciar o
+servidor.
 
----
+O arquivo importante é `blender_addon/server.py`. O antigo `server.py` que
+ficava na raiz era um adaptador MCP de outra arquitetura e foi removido desta
+branch.
 
-## Operational Safety
+## Estado atual
 
-The agent **never executes code autonomously**. The following tools are hard-blocked in the automatic flow (`core/tool_policy.py`):
-
-| Tool | Status |
+| Componente | Estado |
 |---|---|
-| `execute_code` | **Blocked** — user-triggered only |
-| `make_plan` | **Blocked** |
-| `apply_simulator_payload` | **Blocked** |
+| Bridge TCP e cliente Python | Ativos |
+| Leitura e edição incremental de Geometry Nodes | Ativas |
+| Avaliação de geometria e render de conferência | Ativas |
+| `Biomodelo_v2` | Em construção |
+| Painel antropométrico | WIP; ainda não reconciliado com a interface nova |
+| Source completo reproduzível do biomodelo | Parcial |
+| Arquivos `.blend` | Não versionados intencionalmente |
 
-The legacy mutation path writes drafts via `write_script_draft`. The user opens the draft in the Blender Text Editor, reviews it, and runs it manually via the addon's cycle operators (*Abrir Draft → Rodar Draft*).
+A árvore antiga `Biomodelo` é usada localmente como referência de comparação.
+A nova `Biomodelo_v2` está sendo reconstruída de forma modular. No checkpoint
+de 25/07/2026 ela tinha 69 entradas e ainda faltavam módulos como polegar,
+montagem final e pele; essa contagem não é um contrato definitivo.
 
-The biomodel-source path writes `GN_Biomodel_Source` and still keeps manual execution as the safety boundary. Running that source should create or replace only `VB_Biomodel_Generated`, not mutate `Biomodelo`.
+### Atenção ao painel antropométrico
 
----
+O derivador atual ainda usa um mapa antigo e reduzido de sockets. Portanto,
+**não use “Aplicar Antropometria” na árvore de referência nem na
+`Biomodelo_v2` até a reconciliação ser concluída**.
 
-## Prerequisites
+Os cálculos puros foram mantidos porque fazem parte do trabalho em andamento.
+Os testes desses cálculos podem passar sem que isso signifique que o botão já
+esteja compatível com a árvore nova.
 
-- **Blender 4.0 or later**
-- **`anthropic` Python package** — must be installed inside Blender's bundled Python (see [Installation](#installation))
-- **Anthropic API key** — set in the addon preferences
+## O que são os “contratos” de parâmetros?
 
----
+Neste projeto, “contrato” não é um documento jurídico. É um mapa entre um
+controle visível e o identificador interno que o Blender atribui ao socket:
 
-## Installation
+```text
+Socket_21  → comprimento do antebraço
+Socket_24  → desvio radial/ulnar do punho
+Socket_145 → membro esquerdo
+```
 
-### 1. Get the repository
+As contagens diferentes não representam cinco sistemas que precisam funcionar
+ao mesmo tempo. Elas registram fases e finalidades diferentes:
+
+| Artefato | Finalidade |
+|---|---|
+| `presets/biomodel_sockets_live.json` | captura anterior, com 89 sockets |
+| `presets/scan_referencia.json` | valores de um preset; não define toda a interface |
+| `blender_addon/biomodel/source_template.py` | consolidação parcial para geração por código |
+
+Durante o refactor:
+
+1. a árvore viva aberta no Blender é a referência operacional;
+2. capturas locais mais recentes devem ser revisadas antes de serem
+   versionadas;
+3. nenhum mapa antigo deve dirigir automaticamente o painel antropométrico;
+4. o manifesto canônico será gerado quando a interface da `Biomodelo_v2`
+   estiver estável.
+
+## Requisitos
+
+- Blender 4.0 ou mais recente;
+- Python 3.10 ou mais recente para o cliente externo;
+- `pytest` somente para os testes automatizados.
+
+O addon e o cliente não precisam de Anthropic, MCP ou outros pacotes externos.
+O módulo `bpy` já faz parte do Blender e não deve ser instalado com `pip`.
+
+## Instalação no Blender
+
+Clone o repositório:
 
 ```bash
-git clone <repo-url>
-cd blend_IA_ort_v2
+git clone https://github.com/LOP3D-Unifesp/orthosis-ai-blender-agent.git
+cd orthosis-ai-blender-agent
 ```
 
-### 2. Install the addon in Blender
+No PowerShell, gere o pacote local do addon:
 
-Create a zip of the `blender_addon/` folder and install it in Blender:
-
-```
-# From repo root:
-# Compress blender_addon/ → blender_addon.zip
-# Then in Blender: Edit → Preferences → Add-ons → Install from Disk → select the zip
+```powershell
+Compress-Archive -Path blender_addon -DestinationPath blender_addon.zip -Force
 ```
 
-Enable **"Orthosis AI Agent"** in the add-ons list.
+No Blender:
 
-### 3. Install `anthropic` inside Blender's Python
+1. abra **Edit → Preferences → Add-ons**;
+2. escolha **Install from Disk**;
+3. selecione `blender_addon.zip`;
+4. habilite **Orthosis Bridge**;
+5. abra a lateral da Viewport com `N`;
+6. confira em **Orthosis → Bridge** se aparece `localhost:65432`.
 
-Blender ships its own Python interpreter. You must install `anthropic` inside it — **not** in your system Python.
+O ZIP é um artefato local e está ignorado pelo Git.
 
-**Find Blender's Python executable** — in the Blender Scripting workspace, run:
+## Uso básico
+
+Com o Blender aberto e o addon ativo:
+
 ```python
-import sys; print(sys.executable)
+from blender_connection import BlenderConnection
+
+blender = BlenderConnection()
+
+print(blender.ping())
+print(blender.capture_scene())
+
+nodes = blender.list_tree_nodes("Biomodelo_v2")
+print(nodes)
 ```
 
-Then install `anthropic`:
+Comece pelas operações de leitura:
+
+- `capture_scene`;
+- `capture_node_trees`;
+- `list_tree_nodes`;
+- `find_tree_nodes`;
+- `get_node_context`;
+- `trace_subgraph`.
+
+O cliente também oferece mutações tipadas, avaliação geométrica, render de
+conferência e `execute_code`. Use operações de escrita somente com o arquivo
+salvo e o alvo explicitamente conferido.
+
+## Testes
+
+Instale a dependência de desenvolvimento:
 
 ```bash
-# Windows (example path — use the path from the step above):
-"C:\Program Files\Blender Foundation\Blender 4.x\4.x\python\bin\python.exe" -m pip install anthropic
-
-# macOS / Linux (example):
-/path/to/blender/4.x/python/bin/python3.xx -m pip install anthropic
+python -m pip install -r requirements.txt
 ```
 
-> **Note:** `requirements.txt` in this repo covers development tools and the optional MCP server, **not** this Blender-internal install.
-
-### 4. Configure the addon
-
-**Edit → Preferences → Add-ons → Orthosis AI Agent:**
-
-- **Claude API Key** — your Anthropic API key
-- **Project Root Path** — path to the root of this repository (the folder containing `blender_addon/` and `knowledge/`)
-
----
-
-## Usage
-
-1. Open a `.blend` file containing a Geometry Nodes setup.
-2. Open the **View3D sidebar** (press `N`) → **Orthosis** tab.
-3. Type a prompt. Example: *"escreve um draft para parametrizar a escala do metacarpo"*
-4. The agent reads the scene context, then proposes a Python script draft.
-5. Click **Abrir Draft** to inspect the script in the Text Editor.
-6. Review the script — verify it targets the correct nodes.
-7. Click **Rodar Draft** to execute manually.
-8. Report the result (success **✓** or describe the failure) to continue the conversation.
-
-> **Language:** The agent responds in **Brazilian Portuguese** by default.
-
----
-
-## Running Tests
-
-The test suite runs without Blender or `bpy` (both are mocked internally):
+Execute a suíte que não depende do Blender:
 
 ```bash
 python -m pytest -q
 ```
 
-Expected output: **185 passed** in under 2 seconds.
+Execute os testes novamente após qualquer mudança no mapa antropométrico.
 
----
+Esses testes cobrem os cálculos antropométricos puros. Eles não comprovam que
+o painel antropométrico já funciona com a `Biomodelo_v2`.
 
-## Project Structure
+Para testar o canal completo com o Blender aberto:
 
-```
-blend_IA_ort_v2/
-├── blender_addon/          # Installable Blender addon package
-│   ├── core/               # AgentRuntime, agent loop, Anthropic client, tool policy
-│   ├── handler/            # Workspace handler, draft pipeline, feedback handlers
-│   ├── runtime/            # Router, pending decision, tree renderer, observability
-│   ├── session/            # Session schema, V1 JSON store, JSONL chat history
-│   ├── tools/              # Tool dispatchers (Blender-side), schemas, TCP client
-│   └── ui/                 # Blender panels, operators, cycle state machine
-├── knowledge/              # Agent knowledge corpus (read-only by the retriever)
-│   ├── domain/             # GN reference, orthosis domain, clinical parameters
-│   ├── skills/             # Diagnosis, mutation, and navigation guides
-│   └── recipes/            # Reusable GN patterns
-├── docs/                   # Architecture documentation
-│   └── refactor_handoff/   # LIVE_FLOW.md — live architecture reference
-├── contracts/              # JSON schemas for tool calls and session events
-├── tests/                  # Automated tests (no bpy required)
-├── tools/                  # Dev utilities (telemetry, runtime validation)
-├── server.py               # Optional MCP server (alternate integration path)
-├── blender_connection.py   # TCP client used by the MCP server
-├── CLAUDE.md               # Internal development log and agent behaviour rules
-└── requirements.txt        # Dev/MCP dependencies (not for Blender-internal install)
+```bash
+python smoke_bridge.py --tree Biomodelo_v2
 ```
 
----
+O smoke test faz uma alteração pequena e a restaura na mesma execução. Rode-o
+somente com o arquivo salvo ou em uma cópia de teste.
 
-## Current Status and Limitations
+## Segurança
 
-| Area | Status |
-|---|---|
-| Core agent loop | ✅ Functional — 191 tests pass |
-| Session persistence | ✅ V1 JSON + JSONL chat history |
-| Post-failure recovery | 🔶 Partial — diagnosis works; state sync has known edge cases |
-| LLM provider | ⚠️ Coupled to Anthropic API — multi-LLM abstraction not yet implemented |
-| GN tree scale | ⚠️ Validated at ~80–103 nodes; target is 400–500 |
-| Test coverage | ⚠️ Several modules lack dedicated unit tests (router, workspace, fast_path) |
-| GitHub readiness | 🔶 No LICENSE defined yet; not ready for public clinical use |
+O bridge escuta apenas em `localhost`, mas não possui autenticação. O comando
+`execute_code` pode executar Python arbitrário dentro do Blender.
 
-Known technical debt is documented in [`CLAUDE.md`](CLAUDE.md) (section *Dívida técnica atual*) and [`docs/refactor_handoff/LIVE_FLOW.md`](docs/refactor_handoff/LIVE_FLOW.md).
+- não exponha a porta em uma interface de rede;
+- não execute clientes ou scripts não confiáveis;
+- confira o alvo antes de qualquer mutação;
+- mantenha snapshots locais dos marcos importantes;
+- pare o bridge quando ele não estiver em uso.
 
----
+## Estrutura principal
 
-## ⚠️ Sensitive Data Warning
+```text
+blender_addon/          addon instalado no Blender
+blender_connection.py   cliente TCP externo
+smoke_bridge.py         teste ponta a ponta com Blender aberto
+tests/                  testes Python sem bpy
+presets/                mapas e capturas versionadas de sockets
+docs/                   decisões e histórico técnico do biomodelo
+knowledge/              referências técnicas usadas durante o desenvolvimento
+biomodel_source/         fonte parcial reproduzível do Geometry Nodes
+```
 
-The following are **auto-generated at runtime and must never be committed**:
+Os documentos datados em `docs/` registram decisões de fases anteriores e
+podem mencionar componentes que já foram removidos desta branch.
 
-| Path | Content | Status |
-|---|---|---|
-| `runtime/` | Session state, chat history, journals, draft history | In `.gitignore` ✅ |
-| `.claude/` | Claude Code workspace metadata | In `.gitignore` ✅ |
-| `*.blend` / `*.blend1` | Blender files (may contain private geometry) | In `.gitignore` ✅ |
+## Arquivos Blender
 
-**Before every commit:** run `git status` to verify none of these appear as staged files.
-Never use `git add -f` on `runtime/` — it contains local file paths and conversation history.
+Arquivos `.blend`, `.blend1`, materiais de pesquisa privados e snapshots de
+`runtime/` são deliberadamente ignorados. Um commit desta branch não é backup
+do arquivo Blender aberto nem dos documentos científicos em elaboração.
 
----
+Quando o `Biomodelo_v2` estiver pronto para distribuição, deve ser escolhido
+um único `.blend` canônico e uma estratégia própria de publicação, como Git
+LFS, GitHub Release ou armazenamento externo com checksum.
 
-## License
+## Licença
 
-License to be defined. This repository is currently **research use only**.
-Do not redistribute without explicit permission from the project authors.
-
----
-
-*VB Orthosis Project*
+A licença do repositório ainda não foi definida. O uso atual está restrito ao
+contexto de pesquisa do projeto.

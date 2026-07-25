@@ -21,6 +21,39 @@
 *.zip
 dist/
 
+# Report rendering / office temp artifacts
+/relatorio_ortese/lo_profile*/
+/relatorio_ortese/qa_word*/
+
+# Unpublished/local research material — keep offline and review before publishing
+/CLAUDE.md
+/CBEB2026_*
+/paper_assets/
+/relatorio_ortese/
+/docs/ARQUITETURA_PARAMETROS_BIOMODELOV4_2026-07-14.md
+/docs/AUDITORIA_REFERENCIAS_PARAMETRIZACAO_2026-07-14.md
+/docs/CORRECAO_CONTROLES_BIOMODELO_CLINICO_V2_1_2026-07-14.md
+/docs/CORRECAO_CONTROLES_POLEGAR_V2_2_2026-07-15.md
+/docs/IMPLEMENTACAO_BIOMODELO_CLINICO_V2_2026-07-14.md
+/docs/MAPA_ARVORES_GN_v8.html
+/docs/PLANO_RECONSTRUCAO_ARVORE_2026-07-24.md
+/presets/biomodel_clinical_contract_v2.json
+/presets/biomodel_interface_live_*.json
+/tests/test_clinical_contract.py
+/tools/analyze_size_slider_sensitivity.py
+/tools/build_biomodel_v6_headless.py
+/tools/build_cbeb_biomodel_paper.ps1
+/tools/create_biomodel_clinical_wrapper.py
+/tools/create_fixed_anatomy_pose_experiment.py
+/tools/evaluate_biomodel_scan.py
+/tools/inspect_biomodel_paper.py
+/tools/inspect_blend_curves.py
+/tools/inspect_geometry_nodes_blend.py
+/tools/render_biomodel_paper.py
+/tools/render_fixed_anatomy_pose_experiment.py
+/tools/report_live_biomodel_interface.py
+/private_backup/
+
 # Claude Code workspace metadata
 .claude/
 

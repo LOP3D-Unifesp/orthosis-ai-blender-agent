@@ -106,7 +106,7 @@ via o painel de chat embarcado no Blender.
 
 | Área | Papel |
 |---|---|
-| `server.py` / `BlenderBridgeServer` | bridge TCP — spine do canal direto |
+| `blender_addon/server.py` / `BlenderBridgeServer` | bridge TCP — spine do canal direto |
 | `tools/handlers.py` `HANDLERS` | handlers diretos sem gate |
 | `tools/execution.py` `handle_execute_code` | primitivo de patch |
 | `tools/reads.py` (`list_tree_nodes`, `find_tree_nodes`, `get_node_context`, ...) | inspeção da árvore viva |

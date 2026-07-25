@@ -1,7 +1,7 @@
-"""TCP client for connecting to the Blender bridge addon.
+"""TCP client for connecting external development scripts to Blender.
 
-Used by the MCP server process to send commands to Blender and receive
-responses. Matches the protocol in blender_addon/server.py:
+Sends commands to the Orthosis Bridge addon and receives responses. Matches
+the protocol in blender_addon/server.py:
 length-prefix (8 ASCII digits) + JSON payload.
 """
 

@@ -1,0 +1,41 @@
+{
+  "schema_version": 15,
+  "architecture": "clinical_scan_facade_v3_6",
+  "source_object": "BM_AJUSTE_SCAN_BASE_v3_5",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_6",
+  "target_facade": "BM_AjusteScan_v3_6",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_6",
+  "target_core": "Biomodelo_v3_6",
+  "target_groups": {
+    "forearm": "BM_Antebraco_Punho_v3_6",
+    "wrist_derivation": "BM_Deriv_Punho_Carpo_v3_6",
+    "long_finger": "BM_Dedo_Longo_v3_6"
+  },
+  "adds": {
+    "wrist_axial_length": {
+      "label": "Punho — comprimento axial",
+      "unit": "mm",
+      "range": [20.0, 100.0],
+      "panel": "1. Medidas do indivíduo"
+    },
+    "metacarpal_base_height": {
+      "label": "Base dos metacarpos — altura",
+      "unit": "mm",
+      "range": [-30.0, 30.0],
+      "panel": "4. Punho, abertura e arco da palma"
+    }
+  },
+  "promotes": {
+    "metacarpal_setback_legacy": {
+      "old_label": "Metacarpos — recuo global (avançado)",
+      "new_label": "Base dos metacarpos — avanço/recuo",
+      "panel": "4. Punho, abertura e arco da palma"
+    }
+  },
+  "semantics": {
+    "wrist_flexion": "pose rotation only",
+    "wrist_axial_length": "carpal sphere axial size and carpal boundary",
+    "metacarpal_setback": "longitudinal base offset for the four long metacarpals",
+    "metacarpal_base_height": "palmar-dorsal translation for the four long rays"
+  }
+}

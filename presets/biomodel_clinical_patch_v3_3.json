@@ -1,0 +1,34 @@
+{
+  "schema_version": 12,
+  "architecture": "clinical_scan_facade_v3_3",
+  "source_policy": "copy the active V3.2 clinical instance and preserve its values",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_3",
+  "target_facade": "BM_AjusteScan_v3_3",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_3",
+  "target_core": "Biomodelo_v3_3",
+  "target_forearm_group": "BM_Antebraco_Punho_v3_3",
+  "group_1_order": [
+    "Comprimento do antebraço",
+    "Perímetro proximal do antebraço",
+    "Perímetro do punho",
+    "Flexão/extensão do punho",
+    "Pronação/supinação da base proximal",
+    "Base proximal — largura/espessura",
+    "Membro esquerdo",
+    "Punho até MCP do dedo médio",
+    "Largura da palma",
+    "Espessura palmar-dorsal"
+  ],
+  "wrist_flexion_range_degrees": [-180.0, 180.0],
+  "forearm_pronation": {
+    "range_degrees": [-180.0, 180.0],
+    "semantics": "progressive Y-axis twist; wrist fixed and proximal ring receives full angle"
+  },
+  "proximal_aspect_ratio": {
+    "range": [0.6, 2.2],
+    "default": 1.25,
+    "semantics": "width divided by palmar-dorsal thickness",
+    "perimeter_model": "Ramanujan ellipse approximation",
+    "interpolation": "current wrist section to parameterized proximal section"
+  }
+}

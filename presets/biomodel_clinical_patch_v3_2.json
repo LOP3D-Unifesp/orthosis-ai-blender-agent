@@ -1,0 +1,31 @@
+{
+  "schema_version": 11,
+  "architecture": "clinical_scan_facade_v3_2",
+  "source_object": "BM_AJUSTE_SCAN_BASE_v3_1",
+  "canonical_neutral_object": "BM_v2_DEV",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_2",
+  "target_facade": "BM_AjusteScan_v3_2",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_2",
+  "model_core": "Biomodelo_v3_1",
+  "neutral_semantics": {
+    "visible_pose_zero": "canonical_flat_pose_from_BM_v2_DEV",
+    "long_fingers": "canonical raw per-joint flexion plus visible clinical delta",
+    "thumb": "canonical raw flat-scan pose plus visible clinical delta",
+    "hidden_v1_pose_offsets": "retired"
+  },
+  "mcp_clearance": {
+    "previous": "fixed 8.3082 + 2.5 mm",
+    "new": "current finger thickness * 0.492 + 2.5 mm",
+    "reason": "keep the proximal phalanx close to the MCP head at every clinical finger thickness"
+  },
+  "panel_order": {
+    "4. Punho, abertura e arco da palma": [
+      "Flexão/extensão do arco da mão",
+      "Desvio radial/ulnar do punho",
+      "Abertura dos dedos",
+      "Abertura angular MCP (2 + 2)",
+      "Curvatura radial da palma",
+      "Curvatura ulnar da palma"
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "schema_version": 14,
+  "architecture": "clinical_scan_facade_v3_5",
+  "source_object": "BM_AJUSTE_SCAN_BASE_v3_4",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_5",
+  "target_facade": "BM_AjusteScan_v3_5",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_5",
+  "target_core": "Biomodelo_v3_5",
+  "target_forearm_group": "BM_Antebraco_Punho_v3_5",
+  "adds": [
+    "wrist_width",
+    "wrist_thickness"
+  ],
+  "controls": {
+    "wrist_width": {
+      "label": "Punho — largura",
+      "unit": "mm",
+      "range": [20.0, 150.0]
+    },
+    "wrist_thickness": {
+      "label": "Punho — espessura",
+      "unit": "mm",
+      "range": [20.0, 150.0]
+    }
+  },
+  "geometry": {
+    "carpal_sphere": "width and thickness directly define its cross-section",
+    "forearm_transition": "linear interpolation from wrist dimensions to proximal dimensions"
+  },
+  "precedence": "wrist width and thickness define the distal ellipse; wrist perimeter remains a clinical reference measurement"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 13,
+  "architecture": "clinical_scan_facade_v3_4",
+  "source_object": "BM_AJUSTE_SCAN_BASE_v3_3",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_4",
+  "target_facade": "BM_AjusteScan_v3_4",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_4",
+  "target_core": "Biomodelo_v3_4",
+  "target_forearm_group": "BM_Antebraco_Punho_v3_4",
+  "replaces": {
+    "forearm_base_aspect": [
+      "forearm_base_width",
+      "forearm_base_thickness"
+    ]
+  },
+  "controls": {
+    "forearm_base_width": {
+      "label": "Base proximal — largura",
+      "unit": "mm",
+      "range": [20.0, 250.0]
+    },
+    "forearm_base_thickness": {
+      "label": "Base proximal — espessura",
+      "unit": "mm",
+      "range": [20.0, 250.0]
+    }
+  },
+  "precedence": "width and thickness directly define the proximal ellipse; proximal perimeter remains a clinical reference measurement"
+}

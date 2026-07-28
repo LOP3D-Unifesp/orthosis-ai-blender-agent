@@ -1,0 +1,47 @@
+{
+  "schema_version": 10,
+  "architecture": "clinical_scan_facade_v3_1",
+  "source_object": "BM_AJUSTE_SCAN_BASE_v3",
+  "target_object": "BM_AJUSTE_SCAN_BASE_v3_1",
+  "target_facade": "BM_AjusteScan_v3_1",
+  "target_adapter": "BM_AS_Nucleo_Clinico_v3_1",
+  "target_core": "Biomodelo_v3_1",
+  "target_long_finger_group": "BM_Dedo_Longo_v3_1",
+  "target_angular_group": "BM_Dedo_AberturaZ_v1",
+  "reference_digit": "middle",
+  "reference_lengths_mm": {
+    "proximal": 46.1,
+    "middle": 28.4,
+    "distal": 18.2
+  },
+  "anthropometric_factors": {
+    "index": {
+      "proximal": 0.9312364425,
+      "middle": 0.8919014085,
+      "distal": 0.9203296703
+    },
+    "middle": {
+      "proximal": 1.0,
+      "middle": 1.0,
+      "distal": 1.0
+    },
+    "ring": {
+      "proximal": 0.9436008677,
+      "middle": 0.9542253521,
+      "distal": 0.9505494505
+    },
+    "little": {
+      "proximal": 0.7418655098,
+      "middle": 0.6971830986,
+      "distal": 0.8296703297
+    }
+  },
+  "rules": [
+    "Group 2 stores absolute patient measurements for the middle-finger phalanges.",
+    "D2-D5 lengths equal the matching middle-finger reference times a calibrated factor plus the optional zero-based per-digit difference.",
+    "Palmar-arc master zero means zero metacarpal X rotation before fine curvature.",
+    "MCP 2+2 opening is a Z rotation around each metacarpal base, never a lateral translation.",
+    "Radial-ulnar wrist deviation belongs to the main wrist/opening panel.",
+    "Legacy wrist flexion starts neutral in V3.1."
+  ]
+}

@@ -1,7 +1,8 @@
 """TCP socket bridge running inside Blender.
 
-Listens on localhost:65432. Each connection receives one JSON command and
-returns one JSON response. Protocol: 8-byte ASCII length prefix + UTF-8 JSON.
+Listens on localhost:65432 by default, or on the per-process port selected by
+``ORTHOSIS_BRIDGE_PORT``. Each connection receives one JSON command and returns
+one JSON response. Protocol: 8-byte ASCII length prefix + UTF-8 JSON.
 
 All commands are dispatched through HANDLERS in tools/handlers.py.
 """
@@ -9,6 +10,7 @@ All commands are dispatched through HANDLERS in tools/handlers.py.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import threading
 import time
@@ -17,8 +19,28 @@ import traceback
 from .tools.handlers import HANDLERS
 
 DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 65432
+FALLBACK_PORT = 65432
+PORT_ENV_VAR = "ORTHOSIS_BRIDGE_PORT"
 RECV_CHUNK = 65536
+
+
+def _configured_port() -> int:
+    """Return the per-process bridge port, falling back to the project default."""
+    raw = os.environ.get(PORT_ENV_VAR, "").strip()
+    if not raw:
+        return FALLBACK_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        print(f"[Bridge] Ignoring invalid {PORT_ENV_VAR}={raw!r}; using {FALLBACK_PORT}")
+        return FALLBACK_PORT
+    if not 1 <= port <= 65535:
+        print(f"[Bridge] Ignoring out-of-range {PORT_ENV_VAR}={raw!r}; using {FALLBACK_PORT}")
+        return FALLBACK_PORT
+    return port
+
+
+DEFAULT_PORT = _configured_port()
 
 
 class BlenderBridgeServer:

@@ -8,11 +8,27 @@ length-prefix (8 ASCII digits) + JSON payload.
 from __future__ import annotations
 
 import json
+import os
 import socket
 
 
 DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 65432
+FALLBACK_PORT = 65432
+PORT_ENV_VAR = "ORTHOSIS_BRIDGE_PORT"
+
+
+def _configured_port() -> int:
+    raw = os.environ.get(PORT_ENV_VAR, "").strip()
+    if not raw:
+        return FALLBACK_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        return FALLBACK_PORT
+    return port if 1 <= port <= 65535 else FALLBACK_PORT
+
+
+DEFAULT_PORT = _configured_port()
 TIMEOUT = 60.0  # seconds
 
 

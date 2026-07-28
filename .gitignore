@@ -57,6 +57,9 @@ dist/
 # Claude Code workspace metadata
 .claude/
 
+# Obsidian vault metadata (local UI state)
+.obsidian/
+
 # OS artifacts
 .DS_Store
 Thumbs.db

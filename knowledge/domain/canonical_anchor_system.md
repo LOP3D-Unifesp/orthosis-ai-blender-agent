@@ -27,6 +27,72 @@ Um anchor pode ser:
 - um **pivot anchor**: ponto em torno do qual uma parte gira;
 - um **derived anchor**: calculado a partir de outros anchors e parametros.
 
+## Invariante de identidade e topologia
+
+Um anchor canônico **não pode ser identificado por índice de vértice** da malha
+do biomodelo ou da órtese.
+
+São identidades válidas:
+
+- um nome ou `anchor_id` semântico e estável;
+- um socket de matriz explicitamente nomeado;
+- um ponto em um `BM_AnchorGraph` separado, com `anchor_id`, `parent_id` e
+  `role_id`;
+- uma posição ou matriz derivada de outros anchors e parâmetros clínicos.
+
+Não são identidades válidas:
+
+- "vértice 137";
+- a posição ocupada por uma entrada em `Join Geometry`;
+- a numeração produzida por `Realize Instances`, `Merge by Distance` ou remesh;
+- um atributo que se espera sobreviver a `Mesh to Volume -> Volume to Mesh`.
+
+Índices ainda podem ser usados **localmente** dentro de um algoritmo controlado,
+por exemplo para percorrer os pontos de uma spline. Nesse caso, o índice
+representa a ordem interna daquela curva e não pode virar uma referência
+persistida ou uma API entre biomodelo, órtese e backend.
+
+### Consequência para a ordem dos `Join`
+
+Se nenhum consumidor explicitamente versionado usa índices, a ordem das
+entradas de `Join Geometry` é livre. A árvore pode agrupar a geometria por dedo,
+por tipo ou por legibilidade sem alterar o contrato dos anchors.
+
+Por isso, a arquitetura modular "um grupo por dedo" é compatível com este
+sistema. Não é necessário reproduzir a numeração da árvore viva antiga.
+
+### Ramo separado de anchors
+
+O fluxo recomendado é:
+
+```text
+parâmetros clínicos
+  -> BM_AnchorGraph / matrizes canônicas
+       -> biomodelo modular
+       -> curvas e perfis da órtese
+
+geometria da órtese
+  -> Join / solda / Mesh to Volume / Volume to Mesh
+  -> casca final
+```
+
+O `BM_AnchorGraph` deve ser produzido antes das operações destrutivas de
+topologia e continuar disponível em um ramo separado. Ele não deve ser
+extraído novamente da pele remesheada.
+
+### Critério de regressão
+
+Uma refatoração do biomodelo deve comparar:
+
+- matrizes e posições dos anchors canônicos;
+- medidas clínicas e comprimentos relevantes;
+- forma avaliada, limites e volumes;
+- distâncias para superfícies de referência;
+- saída final da órtese.
+
+Igualdade de numeração de vértices só é um teste auxiliar quando duas saídas já
+possuem deliberadamente a mesma topologia. Ela não é um requisito arquitetural.
+
 ## Conjunto inicial recomendado
 
 ### 1. `forearm_origin_anchor`

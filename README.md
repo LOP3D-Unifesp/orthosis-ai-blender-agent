@@ -57,6 +57,43 @@ O addon inicia o bridge quando é habilitado. O painel **Orthosis**, na lateral
 da Viewport 3D, mostra o estado da porta e permite parar ou reiniciar o
 servidor.
 
+### Duas instâncias do Blender
+
+A porta padrão continua sendo `65432`. Para abrir uma segunda instância
+isolada — por exemplo, uma bancada de análise enquanto outro agente trabalha
+no biomodelo — use:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\launch_blender_analysis.ps1 -Port 65433
+```
+
+Também é possível abrir diretamente um arquivo:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File `
+  .\tools\launch_blender_analysis.ps1 -Port 65433 `
+  -BlendFile "C:\caminho\arquivo.blend"
+```
+
+O lançador define `ORTHOSIS_BRIDGE_PORT` somente para o novo processo. No
+cliente Python, selecione a mesma porta explicitamente:
+
+```python
+from blender_connection import BlenderConnection
+
+analysis_blender = BlenderConnection(port=65433)
+print(analysis_blender.ping())
+```
+
+Cada instância deve usar uma porta diferente. O bridge continua restrito a
+`localhost`.
+
+No Windows, também é possível usar
+`tools\abrir_blender_analise.cmd`: dê dois cliques para abrir uma cena vazia ou
+arraste um arquivo `.blend` sobre o `.cmd` para abri-lo diretamente na porta
+`65433`.
+
 O arquivo importante é `blender_addon/server.py`. O antigo `server.py` que
 ficava na raiz era um adaptador MCP de outra arquitetura e foi removido desta
 branch.

@@ -21,10 +21,10 @@ class BRIDGE_PT_Status(bpy.types.Panel):
 
         row = layout.row()
         if running:
-            row.label(text="localhost:65432", icon="LINKED")
+            row.label(text=f"{srv.host}:{srv.port}", icon="LINKED")
             layout.operator("bridge.stop_server", text="Stop Bridge", icon="X")
         else:
-            row.label(text="Bridge stopped", icon="UNLINKED")
+            row.label(text=f"Bridge stopped ({srv.host}:{srv.port})", icon="UNLINKED")
             layout.operator("bridge.start_server", text="Start Bridge", icon="PLAY")
 
         last = getattr(srv, "_last_connection_at", "")
@@ -35,7 +35,7 @@ class BRIDGE_PT_Status(bpy.types.Panel):
 class BRIDGE_OT_StartServer(bpy.types.Operator):
     bl_idname = "bridge.start_server"
     bl_label = "Start Bridge"
-    bl_description = "Start the TCP bridge server on localhost:65432"
+    bl_description = "Start the TCP bridge server on its configured local port"
 
     def execute(self, context):
         from .. import server as _server_mod
